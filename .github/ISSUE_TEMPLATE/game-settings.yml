@@ -1,0 +1,109 @@
+name: Game Settings Update
+description: Submit or update hardware/control settings for a WHDLoad game
+title: "[Game] "
+labels: ["game-update"]
+body:
+  - type: input
+    id: game_name
+    attributes:
+      label: Game Name
+      description: The full name of the game
+      placeholder: "e.g., Turrican II"
+    validations:
+      required: true
+
+  - type: input
+    id: filename
+    attributes:
+      label: WHDLoad Archive Filename
+      description: The LHA filename (without extension) as shown in Amiberry
+      placeholder: "e.g., Turrican2_v1.3_Psygnosis"
+    validations:
+      required: true
+
+  - type: input
+    id: sha1
+    attributes:
+      label: SHA1 Hash
+      description: SHA1 hash of the LHA file (shown in Amiberry logs, or use sha1sum)
+      placeholder: "e.g., a1b2c3d4e5..."
+
+  - type: dropdown
+    id: chipset
+    attributes:
+      label: Chipset
+      options:
+        - OCS/ECS (default)
+        - AGA
+        - CD32
+
+  - type: dropdown
+    id: cpu
+    attributes:
+      label: CPU
+      options:
+        - "68000"
+        - "68010"
+        - "68020"
+        - "68040"
+
+  - type: dropdown
+    id: primary_control
+    attributes:
+      label: Primary Control
+      options:
+        - Joystick
+        - Mouse
+    validations:
+      required: true
+
+  - type: dropdown
+    id: clock
+    attributes:
+      label: CPU Clock Speed
+      options:
+        - Default
+        - "7 MHz"
+        - "14 MHz"
+        - "25 MHz"
+        - "28 MHz"
+        - Max
+
+  - type: checkboxes
+    id: flags
+    attributes:
+      label: Additional Settings
+      options:
+        - label: NTSC mode required
+        - label: JIT recommended
+        - label: Immediate blitter
+        - label: CPU compatible mode
+        - label: Cycle-exact CPU
+        - label: Slave needs libraries
+
+  - type: input
+    id: screen_height
+    attributes:
+      label: Screen Height (if non-default)
+      placeholder: "e.g., 480"
+
+  - type: input
+    id: screen_width
+    attributes:
+      label: Screen Width (if non-default)
+      placeholder: "e.g., 640"
+
+  - type: textarea
+    id: custom_controls
+    attributes:
+      label: Custom Controller Mappings
+      description: One mapping per line (amiberry_custom format)
+      placeholder: |
+        joyport1_amiberry_custom_none_b=Joy2 Up
+        joyport1_amiberry_custom_none_x=Space
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: Any other compatibility notes, tested configurations, etc.

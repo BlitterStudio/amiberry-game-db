@@ -1,0 +1,80 @@
+name: Sync WHDLoad Database
+
+on:
+  schedule:
+    # Run daily at 08:00 UTC (after Horace's 07:00 UTC build)
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download upstream XML
+        run: |
+          curl -sL -o /tmp/whdload_db.xml \
+            "https://raw.githubusercontent.com/HoraceAndTheSpider/Amiberry-XML-Builder/master/whdload_db.xml"
+          echo "XML size: $(wc -c < /tmp/whdload_db.xml) bytes"
+          echo "Game count: $(grep -c '<game ' /tmp/whdload_db.xml)"
+
+      - name: Convert XML to JSON
+        run: python3 converter/xml_to_json.py /tmp/whdload_db.xml whdload_db.json
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet whdload_db.json 2>/dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes detected"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Changes detected"
+          fi
+
+      - name: Commit changes
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add whdload_db.json
+          # Remove pretty version from repo (only compact is deployed)
+          rm -f whdload_db.pretty.json
+          GAME_COUNT=$(python3 -c "import json; print(json.load(open('whdload_db.json'))['game_count'])")
+          git commit -m "sync: update WHDLoad database (${GAME_COUNT} games)"
+          git push
+
+  deploy:
+    needs: sync
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main  # Get the latest commit (including any sync commit)
+
+      - name: Prepare pages content
+        run: |
+          mkdir -p _site
+          cp whdload_db.json _site/
+          cp schema/whdload_db.schema.json _site/
+          echo '{"status":"ok","file":"whdload_db.json"}' > _site/index.json
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - uses: actions/deploy-pages@v4
+        id: deployment
