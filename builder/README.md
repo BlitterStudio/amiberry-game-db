@@ -49,7 +49,10 @@ cd amiberry-game-db/builder
 
 # Create virtual environment
 python3 -m venv venv
+# TrueNAS defaults to csh/tcsh — use bash first:
+bash
 source venv/bin/activate
+# (or if staying in csh: source venv/bin/activate.csh)
 pip install -r requirements.txt
 ```
 
