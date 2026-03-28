@@ -61,9 +61,13 @@ Use the [Game Settings Update](../../issues/new?template=game-settings.yml) issu
 2. Edit `whdload_db.json` (or add an override in `overrides/`)
 3. Submit a PR — CI will validate the JSON against the schema
 
+## Building from Source
+
+The database can be rebuilt from WHDLoad LHA archives using the included builder. See [`builder/README.md`](builder/README.md) for setup instructions, including automated cron job configuration.
+
 ## Data Source
 
-The database is automatically synced from [HoraceAndTheSpider's Amiberry-XML-Builder](https://github.com/HoraceAndTheSpider/Amiberry-XML-Builder) and converted from XML to structured JSON. The sync runs daily.
+Currently synced daily from [HoraceAndTheSpider's Amiberry-XML-Builder](https://github.com/HoraceAndTheSpider/Amiberry-XML-Builder) and converted to JSON. Being migrated to a self-hosted builder that scans LHA archives directly.
 
 ## License
 
