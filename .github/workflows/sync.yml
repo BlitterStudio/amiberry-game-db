@@ -14,8 +14,10 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    outputs:
+      has_db: ${{ steps.check.outputs.has_db }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -29,41 +31,43 @@ jobs:
           echo "Game count: $(grep -c '<game ' /tmp/whdload_db.xml)"
 
       - name: Convert XML to JSON
-        run: python3 converter/xml_to_json.py /tmp/whdload_db.xml whdload_db.json
-
-      - name: Check for changes
-        id: diff
         run: |
-          if git diff --quiet whdload_db.json 2>/dev/null; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No changes detected"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Changes detected"
-          fi
+          python3 converter/xml_to_json.py /tmp/whdload_db.xml whdload_db.json
+          rm -f whdload_db.pretty.json
 
       - name: Commit changes
-        if: steps.diff.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add whdload_db.json
-          # Remove pretty version from repo (only compact is deployed)
-          rm -f whdload_db.pretty.json
-          GAME_COUNT=$(python3 -c "import json; print(json.load(open('whdload_db.json'))['game_count'])")
-          git commit -m "sync: update WHDLoad database (${GAME_COUNT} games)"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            GAME_COUNT=$(python3 -c "import json; print(json.load(open('whdload_db.json'))['game_count'])")
+            git commit -m "sync: update WHDLoad database (${GAME_COUNT} games)"
+            git push
+          fi
+
+      - name: Check DB exists
+        id: check
+        run: |
+          if [ -f whdload_db.json ]; then
+            echo "has_db=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_db=false" >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
     needs: sync
+    if: needs.sync.outputs.has_db == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
-          ref: main  # Get the latest commit (including any sync commit)
+          ref: main
 
       - name: Prepare pages content
         run: |
@@ -72,9 +76,9 @@ jobs:
           cp schema/whdload_db.schema.json _site/
           echo '{"status":"ok","file":"whdload_db.json"}' > _site/index.json
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
 
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         id: deployment
