@@ -60,9 +60,9 @@ pip install -r requirements.txt
 
 Save as `/mnt/pool/tools/amiberry-game-db/update_db.sh`:
 
-```bash
-#!/bin/bash
-set -euo pipefail
+```sh
+#!/usr/bin/env sh
+set -eu
 
 REPO_DIR="/mnt/pool/tools/amiberry-game-db"
 LHA_DIR="/mnt/pool/data/amiga/games"  # adjust to your LHA path
@@ -74,7 +74,7 @@ cd "$REPO_DIR"
 git pull --ff-only
 
 # Activate venv and run builder
-source builder/venv/bin/activate
+. builder/venv/bin/activate
 python3 builder/build_db.py \
     --scandir "$LHA_DIR" \
     --output "$DB_FILE" \
@@ -83,7 +83,7 @@ python3 builder/build_db.py \
 
 # Commit and push if changed
 if ! git diff --quiet "$DB_FILE" 2>/dev/null; then
-    GAME_COUNT=$(python3 -c "import json; print(json.load(open('$DB_FILE'))['game_count'])")
+    GAME_COUNT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["game_count"])' "$DB_FILE")
     git add "$DB_FILE"
     git commit -m "sync: update WHDLoad database (${GAME_COUNT} games)"
     git push
