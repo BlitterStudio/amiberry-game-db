@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Amiberry WHDLoad Game Database",
+  "type": "object",
+  "required": ["schema_version", "game_count", "games"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    },
+    "source": {
+      "type": "string"
+    },
+    "generated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "upstream_timestamp": {
+      "type": "string"
+    },
+    "game_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "games": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/game" }
+    }
+  },
+  "$defs": {
+    "game": {
+      "type": "object",
+      "required": ["filename", "sha1"],
+      "properties": {
+        "filename": { "type": "string" },
+        "sha1": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "name": { "type": "string" },
+        "subpath": { "type": "string" },
+        "variant_uuid": { "type": "string" },
+        "slave_count": { "type": "integer", "minimum": 0 },
+        "slave_default": { "type": "string" },
+        "slave_libraries": { "type": "boolean" },
+        "slaves": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slave" }
+        },
+        "hardware": { "$ref": "#/$defs/hardware" },
+        "custom_controls": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "slave": {
+      "type": "object",
+      "required": ["filename"],
+      "properties": {
+        "filename": { "type": "string" },
+        "datapath": { "type": "string" },
+        "custom_fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/custom_field" }
+        }
+      }
+    },
+    "custom_field": {
+      "type": "object",
+      "required": ["slot", "type"],
+      "properties": {
+        "slot": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "type": { "type": "string", "enum": ["bool", "bit", "list"] },
+        "caption": { "type": "string" },
+        "label": { "type": "string" },
+        "bit": { "type": "integer", "minimum": 0 },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "properties": {
+        "primary_control": { "type": "string" },
+        "port0": { "type": "string" },
+        "port1": { "type": "string" },
+        "cpu": { "type": "string" },
+        "blitter": { "type": "string" },
+        "clock": { "type": "string" },
+        "chipset": { "type": "string" },
+        "jit": { "type": "boolean" },
+        "cpu_compatible": { "type": "boolean" },
+        "cpu_24bitaddressing": { "type": "boolean" },
+        "cpu_exact": { "type": "boolean" },
+        "sprites": { "type": "string" },
+        "screen_height": { "type": "integer" },
+        "screen_width": { "type": "integer" },
+        "screen_autoheight": { "type": "boolean" },
+        "screen_centerh": { "type": "string" },
+        "screen_centerv": { "type": "string" },
+        "screen_offseth": { "type": "integer" },
+        "screen_offsetv": { "type": "integer" },
+        "ntsc": { "type": "boolean" },
+        "fast_ram": { "type": "integer" },
+        "z3_ram": { "type": "integer" },
+        "chip_ram": { "type": "integer" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
