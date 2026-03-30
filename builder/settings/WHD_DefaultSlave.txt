@@ -2,3 +2,4 @@
 Legend_v1.2_Mindscape_1100 LegendMindscape.Slave
 FourCrystalsOfTrazere_v1.2 FourCrystalsOfTrazere.Slave
 FourCrystalsOfTrazere_v1.2_NTSC FourCrystalsOfTrazereNTSC.Slave
+3DPool_v1.2_0621 3DPool.Slave
