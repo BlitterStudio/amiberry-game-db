@@ -10,6 +10,25 @@ import json
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from pathlib import Path
+
+
+def load_datapath_overrides() -> dict[str, str]:
+    """Load archive/slave datapath overrides shared with the local builder."""
+    settings_path = Path(__file__).resolve().parents[1] / "builder" / "settings" / "WHD_DataPath.txt"
+    if not settings_path.is_file():
+        return {}
+
+    overrides: dict[str, str] = {}
+    with settings_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                overrides[parts[0]] = parts[1]
+    return overrides
 
 
 def parse_hardware(text: str) -> dict:
@@ -113,9 +132,10 @@ def parse_custom_controls(text: str) -> list[str]:
     return lines
 
 
-def convert_game(game_elem: ET.Element) -> dict:
+def convert_game(game_elem: ET.Element, datapath_overrides: dict[str, str] | None = None) -> dict:
     """Convert a single <game> XML element to a dict."""
     entry = {}
+    datapath_overrides = datapath_overrides or {}
 
     # Attributes
     entry["filename"] = game_elem.get("filename", "")
@@ -158,6 +178,13 @@ def convert_game(game_elem: ET.Element) -> dict:
         if custom_fields:
             slave["custom_fields"] = custom_fields
 
+        override = (
+            datapath_overrides.get(f"{entry['filename']}/{slave['filename']}")
+            or datapath_overrides.get(entry["filename"])
+        )
+        if override:
+            slave["datapath"] = override
+
         slaves.append(slave)
     entry["slaves"] = slaves
 
@@ -181,13 +208,14 @@ def convert_game(game_elem: ET.Element) -> dict:
 def convert(xml_path: str, json_path: str) -> None:
     tree = ET.parse(xml_path)
     root = tree.getroot()
+    datapath_overrides = load_datapath_overrides()
 
     # Extract timestamp from root
     timestamp = root.get("timestamp", "")
 
     games = []
     for game_elem in root.findall("game"):
-        games.append(convert_game(game_elem))
+        games.append(convert_game(game_elem, datapath_overrides))
 
     output = {
         "schema_version": 2,

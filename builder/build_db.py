@@ -267,6 +267,14 @@ class SettingsDB:
                 return parts[1]
         return ""
 
+    def get_slave_datapath(self, archive_name: str, slave_name: str) -> str:
+        """Get a datapath override for an archive or a specific slave in that archive."""
+        slave_key = f"{archive_name}/{slave_name}"
+        return (
+            self.value_list("WHD_DataPath.txt", slave_key)
+            or self.value_list("WHD_DataPath.txt", archive_name)
+        )
+
     def get_custom_controls(self, subpath: str) -> list[str]:
         """Load custom controls for a game."""
         path = os.path.join(self.customcontrols_dir, subpath)
@@ -469,6 +477,16 @@ def load_snippets(builder_dir: str) -> list[dict]:
     return entries
 
 
+def apply_datapath_overrides(games: list[dict], settings: SettingsDB) -> None:
+    """Apply datapath overrides to all entries, including unchanged incremental ones."""
+    for game in games:
+        archive_name = game.get("filename", "")
+        for slave in game.get("slaves", []):
+            override = settings.get_slave_datapath(archive_name, slave.get("filename", ""))
+            if override:
+                slave["datapath"] = override
+
+
 # ============================================================================
 # Main builder
 # ============================================================================
@@ -607,6 +625,8 @@ def build_database(scan_dir: str, builder_dir: str, existing_db: str | None = No
               if e.get("sha1") not in new_sha1s and e.get("sha1") not in snippet_sha1s]
     merged.extend(new_entries)
     merged.extend(snippet_entries)
+
+    apply_datapath_overrides(merged, settings)
 
     # Sort by filename for stable output
     merged.sort(key=lambda g: g.get("filename", "").lower())

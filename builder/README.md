@@ -160,6 +160,7 @@ Override files that apply hardware settings to games by subpath. One game name p
 | `Screen_NoCenter_V.txt` | Disable vertical centering |
 | `Screen_Offset_H.txt` | Set horizontal offset (format: `GameName value`) |
 | `Screen_Offset_V.txt` | Set vertical offset (format: `GameName value`) |
+| `WHD_DataPath.txt` | Override slave datapath (format: `ArchiveName value` or `ArchiveName/SlaveName value`) |
 | `WHD_DefaultSlave.txt` | Override default slave (format: `ArchiveName SlaveName`) |
 | `WHD_Libraries.txt` | Game needs external libraries |
 | `WHD_Longname_Fixes.txt` | Override auto-generated game name |
