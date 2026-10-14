@@ -24,3 +24,4 @@ SuperSkidmarksCD
 SuperSkidmarksLowMem
 SuperSkidmarksLMCD
 WildCupSoccer
+Cyberpunks
