@@ -3,7 +3,8 @@
 The settings format is the one used by HoraceAndTheSpider's Amiberry-XML-Builder:
 one file per setting, one game per line. Most files are keyed by subpath (the
 game's folder name inside the archive, shared by every version of the game);
-WHD_DefaultSlave.txt and WHD_DataPath.txt are keyed by archive filename.
+WHD_DefaultSlave.txt and WHD_DataPath.txt are keyed by archive filename, or by
+archive SHA1 when several archives share a filename.
 
 Both the XML converter and the LHA builder apply these overrides to every
 entry on every run, so a change here reaches all matching games, not only
@@ -13,6 +14,7 @@ newly scanned archives.
 import os
 import re
 
+SHA1_KEY = re.compile(r"[0-9a-f]{40}")
 DEFAULT_BUILDER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "builder")
 
 SCREEN_HEIGHTS = ("400", "432", "480", "512", "524", "540", "568")
@@ -50,12 +52,13 @@ FLAG_FILES = (
     *(f"Screen_Width_{w}.txt" for w in SCREEN_WIDTHS),
 )
 
-# "key value" files.
+# "key value" files. Archive keys are the archive filename or, when several
+# archives share a filename, the archive's SHA1 (a SHA1 key wins).
 VALUE_FILES = {
     "Screen_Offset_H.txt": "subpath",
     "Screen_Offset_V.txt": "subpath",
-    "WHD_DefaultSlave.txt": "filename",
-    "WHD_DataPath.txt": "filename",
+    "WHD_DefaultSlave.txt": "archive",
+    "WHD_DataPath.txt": "archive",
 }
 
 # Read by the LHA builder only (names come from upstream when converting XML).
@@ -136,8 +139,17 @@ class Settings:
             return None
         return [line for line in _read_lines(path) if "amiberry_custom" in line]
 
-    def datapath(self, filename: str, slave: str) -> str:
-        return self.value("WHD_DataPath.txt", f"{filename}/{slave}") or self.value("WHD_DataPath.txt", filename)
+    def archive_value(self, filename: str, entry: dict, suffix: str = "") -> str:
+        """Value for an archive-keyed file: SHA1 key first, then filename."""
+        return (self.value(filename, entry.get("sha1", "") + suffix)
+                or self.value(filename, entry.get("filename", "") + suffix))
+
+    def default_slave(self, entry: dict) -> str:
+        return self.archive_value("WHD_DefaultSlave.txt", entry)
+
+    def datapath(self, entry: dict, slave: str) -> str:
+        return (self.archive_value("WHD_DataPath.txt", entry, f"/{slave}")
+                or self.archive_value("WHD_DataPath.txt", entry))
 
 
 def _offset(raw: str, bounds: tuple[int, int]) -> int | None:
@@ -255,13 +267,13 @@ def apply_overrides(entry: dict, settings: Settings) -> None:
             entry.pop("custom_controls", None)
 
     slaves = entry.get("slaves", [])
-    requested = settings.value("WHD_DefaultSlave.txt", filename)
+    requested = settings.default_slave(entry)
     if requested:
         resolved = resolve_slave(requested, slaves)
         if resolved:
             entry["slave_default"] = resolved
 
     for slave in slaves:
-        override = settings.datapath(filename, slave.get("filename", ""))
+        override = settings.datapath(entry, slave.get("filename", ""))
         if override:
             slave["datapath"] = override

@@ -20,8 +20,8 @@ import sys
 
 from check_overrides import CONTROL_LINE
 from overrides import (CLOCK_SPEEDS, CPU_MODELS, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS, OFFSET_H_RANGE,
-                       OFFSET_V_RANGE, SCREEN_HEIGHTS, SCREEN_WIDTHS, Z3_SIZES, Settings, merge_hardware,
-                       resolve_slave, settings_hardware)
+                       OFFSET_V_RANGE, SCREEN_HEIGHTS, SCREEN_WIDTHS, SHA1_KEY, Z3_SIZES, Settings,
+                       merge_hardware, resolve_slave, settings_hardware)
 
 MARKER = "<!-- game-db-triage -->"
 REPO_ROOT = os.path.dirname(DEFAULT_BUILDER_DIR)
@@ -199,10 +199,17 @@ def set_ports(settings: EditableSettings, subpath: str, wanted: list[str]) -> No
             settings.remove(name, subpath)
 
 
-def plan(form: dict[str, str], entry: dict, settings: EditableSettings) -> list[str]:
+def archive_key(entry: dict, games: list[dict]) -> str:
+    """Key for archive-specific files: the SHA1 when the filename is shared."""
+    shared = sum(1 for g in games if g["filename"] == entry["filename"]) > 1
+    return entry["sha1"] if shared else entry["filename"]
+
+
+def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: list[dict]) -> list[str]:
     """Apply the request to `settings`; return problems that need a human."""
     problems: list[str] = []
     subpath, filename = entry["subpath"], entry["filename"]
+    archive = archive_key(entry, games)
 
     chipset = field(form, "chipset").lower()
     current_ports = effective_ports(entry, settings)
@@ -286,7 +293,7 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings) -> list[
     if slave:
         resolved = resolve_slave(slave, entry.get("slaves", []))
         if resolved:
-            settings.set_value("WHD_DefaultSlave.txt", filename, resolved)
+            settings.set_value("WHD_DefaultSlave.txt", archive, resolved)
         else:
             names = ", ".join(f"`{s['filename']}`" for s in entry.get("slaves", []))
             problems.append(f"The archive has no slave `{slave}` (slaves: {names}).")
@@ -296,7 +303,7 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings) -> list[
         if " " in datapath:
             problems.append(f"Data path `{datapath}` must not contain spaces.")
         else:
-            settings.set_value("WHD_DataPath.txt", filename, datapath)
+            settings.set_value("WHD_DataPath.txt", archive, datapath)
 
     controls = field(form, "custom controller mappings")
     if controls:
@@ -333,7 +340,13 @@ def related_issues(number: int, filename: str, sha1: str, entry: dict | None, ga
         other_file = field(form, "whdload archive filename")
         other_sha1 = field(form, "sha1 hash").lower()
         ref = f"#{issue['number']}"
-        if (sha1 and other_sha1 == sha1) or (other_file and other_file == filename):
+        # Filenames are shared by different archives; compare them only when
+        # either request lacks a usable SHA1.
+        if SHA1_KEY.fullmatch(sha1) and SHA1_KEY.fullmatch(other_sha1):
+            same = sha1 == other_sha1
+        else:
+            same = bool(other_file) and other_file == filename
+        if same:
             same_archive.append(ref)
             continue
         if entry:
@@ -373,13 +386,16 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
     settings = EditableSettings(builder_dir)
     hardware = entry.get("hardware", {})
     before = merge_hardware(hardware, settings_hardware(entry["filename"], entry["subpath"], settings))
-    problems = plan(form, entry, settings)
+    problems = plan(form, entry, settings, games)
     after = merge_hardware(hardware, settings_hardware(entry["filename"], entry["subpath"], settings))
 
-    siblings = [g["filename"] for g in games if g["subpath"] == entry["subpath"]]
+    siblings = [g for g in games if g["subpath"] == entry["subpath"]]
+    names = [g["filename"] for g in siblings]
+    labels = [f"`{g['filename']}`" + (f" ({g['sha1'][:8]})" if names.count(g["filename"]) > 1 else "")
+              for g in siblings]
     out += [f"**Archive:** `{entry['filename']}` (`{entry['sha1']}`), matched by {matched_by}.",
             f"**Game folder:** `{entry['subpath']}`. Settings marked \"all versions\" apply to "
-            f"{len(siblings)} archive(s): {', '.join(f'`{s}`' for s in siblings)}.", ""]
+            f"{len(siblings)} archive(s): {', '.join(labels)}.", ""]
     if matched_by == "filename" and sha1:
         out += ["The SHA1 given does not match any archive; the entry was found by filename. "
                 "Please check the SHA1 of your .lha file.", ""]
@@ -392,7 +408,7 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
     out += ["### Hardware", ""] + hardware_table(before, after) + [""]
     if any("WHD_DefaultSlave" in c for c in settings.changes):
         out += [f"Default slave: `{entry.get('slave_default')}` -> "
-                f"`{settings.value('WHD_DefaultSlave.txt', entry['filename'])}`", ""]
+                f"`{settings.default_slave(entry)}`", ""]
     controls = entry.get("custom_controls", [])
     if controls:
         out += ["Current controller mappings:", "", "```", *controls, "```", ""]

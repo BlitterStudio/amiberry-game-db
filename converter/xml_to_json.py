@@ -227,9 +227,21 @@ def changed_fields(before: dict, after: dict) -> list[str]:
                 if hw_before.get(hw_key) != hw_after.get(hw_key):
                     changes.append(f"hardware.{hw_key}: {hw_before.get(hw_key)!r} -> {hw_after.get(hw_key)!r}")
         elif key == "slaves":
-            for old, new in zip(before.get(key, []), after.get(key, [])):
-                if old.get("datapath") != new.get("datapath"):
-                    changes.append(f"{new['filename']} datapath: {old.get('datapath')!r} -> {new.get('datapath')!r}")
+            old_slaves, new_slaves = before.get(key, []), after.get(key, [])
+            old_names = [s.get("filename") for s in old_slaves]
+            new_names = [s.get("filename") for s in new_slaves]
+            if old_names != new_names:
+                changes.append(f"slaves: {old_names!r} -> {new_names!r}")
+                continue
+            for old, new in zip(old_slaves, new_slaves):
+                for slave_key in sorted(set(old) | set(new)):
+                    if old.get(slave_key) == new.get(slave_key):
+                        continue
+                    if slave_key == "custom_fields":
+                        changes.append(f"{new['filename']} custom_fields changed")
+                    else:
+                        changes.append(f"{new['filename']} {slave_key}: "
+                                       f"{old.get(slave_key)!r} -> {new.get(slave_key)!r}")
         elif before.get(key) != after.get(key):
             if key == "custom_controls":
                 changes.append("custom_controls changed")

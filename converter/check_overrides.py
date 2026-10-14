@@ -24,7 +24,7 @@ import re
 import sys
 
 from overrides import (BUILDER_ONLY_FILES, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS, FLAG_FILES, OFFSET_H_RANGE,
-                       OFFSET_V_RANGE, VALUE_FILES, Settings, resolve_slave)
+                       OFFSET_V_RANGE, SHA1_KEY, VALUE_FILES, Settings, resolve_slave)
 
 CONTROL_LINE = re.compile(r"^joyport[0-3]_amiberry_custom_(axis_)?(none|hotkey)_[a-z0-9_]+=.+$")
 OFFSET_BOUNDS = {"Screen_Offset_H.txt": OFFSET_H_RANGE, "Screen_Offset_V.txt": OFFSET_V_RANGE}
@@ -88,13 +88,22 @@ def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
                 continue
 
             archive, _, slave = key.partition("/")
-            matches = by_filename.get(archive, [])
+            by_sha1 = SHA1_KEY.fullmatch(archive) is not None
+            matches = [g for g in games if g["sha1"] == archive] if by_sha1 else by_filename.get(archive, [])
+            if not by_sha1:
+                # Archives that have their own SHA1-keyed line ignore this one.
+                matches = [g for g in matches if not settings.value(name, g["sha1"] + (f"/{slave}" if slave else ""))]
             if not matches:
-                warnings.append(f"settings/{name}: no archive named `{archive}`")
-            elif name == "WHD_DefaultSlave.txt":
+                if by_sha1 or archive not in by_filename:
+                    warnings.append(f"settings/{name}: no archive {'with SHA1' if by_sha1 else 'named'} `{archive}`")
+                continue
+            if not by_sha1 and len(matches) > 1:
+                warnings.append(f"settings/{name}: `{archive}` names {len(matches)} archives; "
+                                "use a SHA1 key to target one")
+            if name == "WHD_DefaultSlave.txt":
                 for game in matches:
                     if not resolve_slave(value, game.get("slaves", [])):
-                        errors.append(f"settings/{name}: `{archive}` ({game['sha1']}) has no slave `{value}`")
+                        errors.append(f"settings/{name}: `{game['filename']}` ({game['sha1']}) has no slave `{value}`")
             elif slave and not any(s.get("filename") == slave for g in matches for s in g.get("slaves", [])):
                 errors.append(f"settings/{name}: `{archive}` has no slave `{slave}`")
 

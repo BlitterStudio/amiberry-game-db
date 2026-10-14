@@ -94,8 +94,10 @@ Lines in these files contain two tokens separated by whitespace: `<key> <value>`
 |---|---|---|---|
 | `Screen_Offset_H.txt` | subpath | Integer `-60` to `60` | Horizontal pixel offset; disables horizontal centering. |
 | `Screen_Offset_V.txt` | subpath | Integer `-20` to `20` | Vertical pixel offset; disables vertical centering. |
-| `WHD_DefaultSlave.txt` | filename | Slave filename | Default slave to execute for the archive. |
-| `WHD_DataPath.txt` | filename or `filename/slave` | Directory name | Data directory expected by the slave. |
+| `WHD_DefaultSlave.txt` | archive | Slave filename | Default slave to execute for the archive. |
+| `WHD_DataPath.txt` | archive, or `archive/slave` | Directory name | Data directory expected by the slave. |
+
+An archive key is the archive filename without `.lha`. Some filenames belong to more than one archive (different SHA1s); use the archive's SHA1 as the key to target only one of them. A SHA1 key wins over a filename key, and the triage bot picks the SHA1 key automatically when the filename is shared.
 
 ### Builder-Only Files
 

@@ -57,6 +57,20 @@ jobs:
             gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
           fi
 
-      - name: Label duplicate
-        if: steps.triage.outputs.duplicate == 'true'
-        run: gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label duplicate
+      - name: Sync the duplicate label
+        env:
+          DUPLICATE: ${{ steps.triage.outputs.duplicate }}
+        run: |
+          if [ "$DUPLICATE" = "true" ]; then
+            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label duplicate
+            exit 0
+          fi
+          # Only take the label off when this workflow put it there; a
+          # maintainer's manual duplicate label stays.
+          last_actor=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/events" --paginate \
+            --jq '.[] | select(.event == "labeled" and .label.name == "duplicate") | .actor.login' | tail -n 1)
+          has_label=$(gh issue view "$ISSUE" -R "$GITHUB_REPOSITORY" --json labels \
+            --jq '[.labels[].name] | index("duplicate") != null')
+          if [ "$has_label" = "true" ] && [ "$last_actor" = "github-actions[bot]" ]; then
+            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --remove-label duplicate
+          fi
