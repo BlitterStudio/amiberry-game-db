@@ -261,7 +261,29 @@ For issues with the `game-update` label (the issue form adds it):
 
 ### Applying an Issue
 
-Maintainers apply accepted changes locally, on a branch from an up-to-date `main` (the script reads `whdload_db.json` and the issue through an authenticated `gh` CLI):
+Read the bot's comment, then add the `accepted` label. `.github/workflows/apply.yml` (script: `.github/scripts/apply-request.sh`) then:
+
+1. removes the `accepted` label: each label is one approval, and adding it again later starts a new run;
+2. applies the request, exactly as it read when you added the label, to `builder/` with `triage_issue.py --apply --require-clean`;
+3. rebuilds the database from the current upstream XML and runs the same checks as pull requests;
+4. commits to `main` as "Apply settings from #N" (crediting whoever added the label) and starts the sync, which publishes the change;
+5. comments the database entries that changed and closes the issue. If the request has Additional Notes, the issue stays open: the bot does not act on notes, so close it yourself once nothing else is needed;
+6. re-runs triage, which refreshes this issue's comment and the `duplicate` labels of other requests (closing with the workflow token triggers no issue events).
+
+It applies nothing and comments why when:
+- the archive is not in the database (add a snippet first);
+- an older open request covers the same archive;
+- the bot listed anything under "Needs a maintainer" (this includes HTML in the issue body, which can hide text from the rendered page);
+- the database already has these settings;
+- the checks fail with the changes;
+- the issue was edited less than 5 minutes before you added the label, so you may not have seen the edit or the updated bot comment;
+- the issue was edited between labelling and the push.
+
+Closing the issue, or removing the label before the run starts, withdraws the approval without a comment. Adding the label again while a run is going makes that run stand down; the new run handles the request as it reads then.
+
+Fix the cause (or check the edited request), then add the label again. Only people who can label issues (triage access or higher) can trigger this. You can also start it from the "Apply Accepted Request" workflow's **Run workflow** button with the issue number; that applies the issue as it reads at that moment. If a run pushed its commit but failed before commenting or closing, re-running it finishes those steps instead of reporting "nothing to change".
+
+For anything the bot can't apply on its own (hand-edited settings, snippets, partial requests), apply locally on a branch from an up-to-date `main`. The script reads `whdload_db.json`, and reads the issue through an authenticated `gh` CLI:
 
 ```bash
 git switch -c game-<subpath> origin/main
@@ -269,9 +291,7 @@ python3 converter/triage_issue.py --issue <N> --apply
 git diff
 ```
 
-This writes the settings and custom controller files directly. Commit the changes and open a pull request with `Fixes #N` in the description. Before merging, check that the PR run's job summary lists only the entries you expect under "Entries changed by this PR".
-
-After the merge, the sync run on `main` publishes the change; its job summary lists it under "Changes since the last sync".
+Commit, open a pull request with `Fixes #N`, and check that the PR run's job summary lists only the entries you expect under "Entries changed by this PR". After the merge, the sync run on `main` publishes the change; its job summary lists it under "Changes since the last sync".
 
 ## How Updates Reach Amiberry Users
 
