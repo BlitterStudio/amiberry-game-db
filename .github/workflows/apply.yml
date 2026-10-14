@@ -64,5 +64,6 @@ jobs:
       - name: Apply, check, commit and publish
         env:
           ISSUE_BODY_FILE: ${{ github.event_name == 'issues' && '/tmp/accepted-body.md' || '' }}
-          REQUIRE_LABEL: ${{ github.event_name == 'issues' && '1' || '0' }}
+          # A re-run of a label-triggered run finds the label already consumed.
+          REQUIRE_LABEL: ${{ github.event_name == 'issues' && github.run_attempt == 1 && '1' || '0' }}
         run: bash .github/scripts/apply-request.sh "$ISSUE"

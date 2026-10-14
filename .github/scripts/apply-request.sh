@@ -118,6 +118,13 @@ publish() {  # $1 = pushed commit, $2 = file with the database changes (may be e
   fi
 }
 
+refresh_triage() {
+  # Closing with the workflow token triggers no issue events, so ask triage to
+  # refresh this request's comment and the other requests' duplicate labels.
+  if dry; then echo "--- would run triage.yml for #$ISSUE"; else
+    retry gh workflow run triage.yml -R "$REPO" --ref main -f issue="$ISSUE"; fi
+}
+
 refuse() {  # $1 = file with the reasons; the approval was already consumed
   { cat "$1"; echo; echo "Fix the request or the database, then add the \`accepted\` label again."; } > "$WORK/msg.md"
   say "$WORK/msg.md"
@@ -130,7 +137,8 @@ if [ "$state" != OPEN ]; then
 fi
 
 # Consume the approval before doing anything else.
-if [ "$(label_present)" = true ]; then
+labelled=$(label_present)
+if [ "$labelled" = true ]; then
   if dry; then echo "--- would remove label accepted"; else
     retry gh issue edit "$ISSUE" -R "$REPO" --remove-label accepted > /dev/null; fi
 elif [ "${REQUIRE_LABEL:-0}" = 1 ]; then
@@ -148,6 +156,29 @@ fi
 # was already pushed.
 request_hash=$(sha256sum "$snapshot" | cut -d' ' -f1)
 
+# The label approves what the maintainer read. An edit shortly before the
+# label may not have been seen (or the bot comment not yet updated), so it
+# needs a fresh look. Edits after the label are caught by approval_lost().
+QUIET_SECONDS=300
+approved_at=now  # manual runs: the maintainer approves by starting the run
+if [ -n "${ISSUE_BODY_FILE:-}" ]; then
+  approved_at=$(retry gh api "repos/$REPO/issues/$ISSUE/events" --paginate \
+    --jq '.[] | select(.event == "labeled" and .label.name == "accepted") | .created_at' | tail -n 1)
+  approved_at=${approved_at:-now}
+fi
+# shellcheck disable=SC2016  # GraphQL variables, not shell
+edited_at=$(retry gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F number="$ISSUE" \
+  -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){lastEditedAt}}}' \
+  --jq '.data.repository.issue.lastEditedAt // ""')
+if [ -n "$edited_at" ]; then
+  gap=$(( $(date -d "$approved_at" +%s) - $(date -d "$edited_at" +%s) ))
+  if [ "$gap" -ge 0 ] && [ "$gap" -lt "$QUIET_SECONDS" ]; then
+    printf '%s\n' "Not applied: the request was edited less than $((QUIET_SECONDS / 60)) minutes before it was accepted. Wait for the bot comment to update, check that the request still says what you approved, then add the \`accepted\` label again." > "$WORK/msg.md"
+    say "$WORK/msg.md"
+    exit 0
+  fi
+fi
+
 pushed=0
 for attempt in 1 2 3 4 5; do
   if ! dry; then
@@ -161,9 +192,18 @@ for attempt in 1 2 3 4 5; do
   status=0
   # Plan against the database this run builds, not the committed copy, which
   # can be a day behind upstream (e.g. a newly added same-name archive).
-  python3 converter/triage_issue.py --issue "$ISSUE" --db "$WORK/base.json" --body-file "$snapshot" \
-    --apply --require-clean --notes-output "$WORK/notes.md" --pending-output "$WORK/pending" \
-    --output "$WORK/triage.md" > /dev/null || status=$?
+  # Exit 4 and 5 are verdicts; anything else (a GitHub error while reading the
+  # open requests) is retried on a clean builder/.
+  for try in 1 2 3; do
+    status=0
+    python3 converter/triage_issue.py --issue "$ISSUE" --db "$WORK/base.json" --body-file "$snapshot" \
+      --apply --require-clean --notes-output "$WORK/notes.md" --pending-output "$WORK/pending" \
+      --output "$WORK/triage.md" > /dev/null || status=$?
+    case "$status" in 0|4|5) break ;; esac
+    git checkout -q -- builder
+    git clean -qfd builder
+    sleep $((try * 10))
+  done
 
   if { [ "$status" -eq 4 ] || [ "$status" -eq 5 ]; } && [ "$(cat "$WORK/pending")" = 0 ]; then
     # Nothing written and nothing left to change. If an earlier run already
@@ -175,6 +215,7 @@ for attempt in 1 2 3 4 5; do
       echo "already applied in $previous; finishing publication"
       : > "$WORK/diff.md"
       publish "$previous" "$WORK/diff.md"
+      refresh_triage
       exit 0
     fi
   fi
@@ -232,3 +273,4 @@ if [ "$pushed" != 1 ]; then
 fi
 
 publish "$(git rev-parse --short HEAD)" "$WORK/diff.md"
+refresh_triage

@@ -266,14 +266,16 @@ Read the bot's comment, then add the `accepted` label. `.github/workflows/apply.
 2. applies the request, exactly as it read when you added the label, to `builder/` with `triage_issue.py --apply --require-clean`;
 3. rebuilds the database from the current upstream XML and runs the same checks as pull requests;
 4. commits to `main` as "Apply settings from #N" (crediting whoever added the label) and starts the sync, which publishes the change;
-5. comments the database entries that changed and closes the issue. If the request has Additional Notes, the issue stays open: the bot does not act on notes, so close it yourself once nothing else is needed.
+5. comments the database entries that changed and closes the issue. If the request has Additional Notes, the issue stays open: the bot does not act on notes, so close it yourself once nothing else is needed;
+6. re-runs triage, which refreshes this issue's comment and the `duplicate` labels of other requests (closing with the workflow token triggers no issue events).
 
 It applies nothing and comments why when:
 - the archive is not in the database (add a snippet first);
 - an older open request covers the same archive;
-- the bot listed anything under "Needs a maintainer";
+- the bot listed anything under "Needs a maintainer" (this includes HTML in the issue body, which can hide text from the rendered page);
 - the database already has these settings;
 - the checks fail with the changes;
+- the issue was edited less than 5 minutes before you added the label, so you may not have seen the edit or the updated bot comment;
 - the issue was edited between labelling and the push.
 
 Closing the issue, or removing the label before the run starts, withdraws the approval without a comment. Adding the label again while a run is going makes that run stand down; the new run handles the request as it reads then.

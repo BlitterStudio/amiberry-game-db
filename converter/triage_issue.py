@@ -31,6 +31,10 @@ REPO_ROOT = os.path.dirname(DEFAULT_BUILDER_DIR)
 EMPTY = {"", "_no response_", "no change", "none", "default", "ocs/ecs (default)"}
 # Values written into "key value" settings lines: one token, no whitespace or line breaks.
 SINGLE_TOKEN = re.compile(r"\S+")
+# Amiberry puts the data path into the startup-sequence as DATA="<path>".
+DATA_PATH = re.compile(r"[A-Za-z0-9_./:-]+")
+# Game folders as used in settings files and builder/customcontrols paths.
+SUBPATH_PART = re.compile(r"[A-Za-z0-9_!&+.-]+")
 
 # Checkbox labels (current form and the first version of the form) -> settings file.
 FLAG_LABELS = {
@@ -109,8 +113,14 @@ def parse_form(body: str) -> dict[str, str]:
     return dict(form_sections(body)[1])
 
 
+# Raw HTML outside code blocks can hide text (a comment or a collapsed block)
+# from the rendered issue while the parser still reads it.
+RAW_HTML = re.compile(r"<(!--|/?[A-Za-z][A-Za-z0-9-]*(\s|/?>|$))")
+
+
 def form_problems(body: str) -> list[str]:
-    """Parts of the body that parse_form() would drop or overwrite."""
+    """Parts of the body that parse_form() would drop or overwrite, or that
+    a maintainer reading the rendered issue would not see."""
     preamble, sections = form_sections(body)
     problems = []
     if preamble.strip():
@@ -120,6 +130,14 @@ def form_problems(body: str) -> list[str]:
         if key in seen:
             problems.append(f"The section `{key}` appears more than once; keep one.")
         seen.add(key)
+    fenced = False
+    for line in (body or "").splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced and RAW_HTML.search(line):
+            problems.append("The issue contains HTML outside a code block, which can hide text from the rendered "
+                            "issue; this has to be handled by hand.")
+            break
     return problems
 
 
@@ -134,7 +152,7 @@ def field(form: dict[str, str], *names: str) -> str:
 def checked(form: dict[str, str], *names: str) -> list[str]:
     labels = []
     for name in names:
-        labels += [m.strip().lower() for m in re.findall(r"^- \[[xX]\] (.+)$", form.get(name, ""), flags=re.M)]
+        labels += [m.strip().lower() for m in re.findall(r"^\s*- \[[xX]\] (.+)$", form.get(name, ""), flags=re.M)]
     return labels
 
 
@@ -218,7 +236,9 @@ class EditableSettings(Settings):
     def set_controls(self, subpath: str, lines: list[str]) -> None:
         if self.custom_controls(subpath) != lines:
             self.controls[subpath] = lines
-            self.changes.append(f"write {len(lines)} mapping(s) to `builder/customcontrols/{subpath}`")
+            shown = "".join(f"\n  {line}" for line in lines)
+            self.changes.append(f"write these {len(lines)} mapping(s) to `builder/customcontrols/{subpath}`:\n"
+                                f"  ```{shown}\n  ```")
 
     def exclusive(self, group: str, filename: str | None, key: str) -> None:
         """Make `filename` the only file of `group` listing `key` (None: none)."""
@@ -239,7 +259,11 @@ class EditableSettings(Settings):
             elif os.path.isfile(path):
                 os.remove(path)
         for subpath, lines in self.controls.items():
-            with open(os.path.join(self.customcontrols_dir, subpath), "w", encoding="utf-8", newline="\n") as f:
+            path = os.path.realpath(os.path.join(self.customcontrols_dir, subpath))
+            if not path.startswith(os.path.realpath(self.customcontrols_dir) + os.sep):
+                raise ValueError(f"custom controls path outside builder/customcontrols: {subpath!r}")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write("".join(line + "\n" for line in lines))
 
 
@@ -293,6 +317,8 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
     """
     problems: list[str] = []
     subpath, filename = entry["subpath"], entry["filename"]
+    if not all(SUBPATH_PART.fullmatch(part) and part not in (".", "..") for part in subpath.split("/")):
+        return [f"The entry's game folder `{subpath}` is not a plain folder name; this has to be handled by hand."]
     archive = archive_key(entry, games)
 
     for heading, value in form.items():
@@ -328,7 +354,7 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
 
     z3 = field(form, "zorro iii ram").lower().replace(" mb", "")
     if z3:
-        if z3.isdigit() and int(z3) in Z3_SIZES:
+        if re.fullmatch(r"[0-9]+", z3) and int(z3) in Z3_SIZES:
             settings.exclusive("Z3 RAM", f"Memory_Z3Ram_{z3}.txt", subpath)
         else:
             problems.append(f"Unsupported Z3 RAM size `{z3}`.")
@@ -373,7 +399,7 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
                                        ("vertical screen offset", "Screen_Offset_V.txt", OFFSET_V_RANGE)):
         value = field(form, heading)
         if value:
-            if re.fullmatch(r"-?\d+", value) and bounds[0] <= int(value) <= bounds[1]:
+            if re.fullmatch(r"-?[0-9]+", value) and bounds[0] <= int(value) <= bounds[1]:
                 settings.set_value(filename_, subpath, value)
             else:
                 problems.append(f"{heading.capitalize()} `{value}` must be an integer from {bounds[0]} to {bounds[1]}.")
@@ -407,15 +433,15 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
 
     datapath = field(form, "data path")
     if datapath:
-        if not SINGLE_TOKEN.fullmatch(datapath):
-            problems.append(f"Data path `{datapath}` must be a single word without spaces or line breaks.")
+        if not DATA_PATH.fullmatch(datapath):
+            problems.append(f"Data path `{datapath}` must be one word of letters, digits and `_ . / : -`.")
         else:
             settings.set_value("WHD_DataPath.txt", archive, datapath)
 
     controls = field(form, "custom controller mappings")
     if controls:
         lines = [line.strip() for line in controls.splitlines() if line.strip()]
-        bad = [line for line in lines if not CONTROL_LINE.match(line)]
+        bad = [line for line in lines if not CONTROL_LINE.match(line) or "`" in line]
         if bad:
             problems.append("Not valid mapping lines: " + ", ".join(f"`{b}`" for b in bad))
         else:
