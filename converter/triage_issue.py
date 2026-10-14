@@ -596,6 +596,9 @@ def main() -> None:
                              "already has the settings, 4 for any other refusal; the reasons go to --output")
     parser.add_argument("--body-file", help="use this issue body instead of fetching the current one")
     parser.add_argument("--notes-output", help="write the request's Additional Notes (if any) to this file")
+    parser.add_argument("--pending-output",
+                        help="write how many settings changes the request still needs, or 'unknown' if the "
+                             "archive was not found")
     parser.add_argument("--output", help="also write the comment (or, on refusal, the reasons) to this file")
     args = parser.parse_args()
 
@@ -616,6 +619,9 @@ def main() -> None:
     if args.notes_output:
         with open(args.notes_output, "w", encoding="utf-8") as f:
             f.write(field(parse_form(issue.get("body", "")), "additional notes"))
+    if args.pending_output:
+        with open(args.pending_output, "w", encoding="utf-8") as f:
+            f.write("unknown" if settings is None else str(len(settings.changes)))
 
     if args.apply and args.require_clean:
         reasons = refusal_reasons(duplicate, settings, problems)

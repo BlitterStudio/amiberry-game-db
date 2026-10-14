@@ -166,12 +166,14 @@ for attempt in 1 2 3 4 5; do
   # Plan against the database this run builds, not the committed copy, which
   # can be a day behind upstream (e.g. a newly added same-name archive).
   python3 converter/triage_issue.py --issue "$ISSUE" --db "$WORK/base.json" --body-file "$snapshot" \
-    --apply --require-clean --notes-output "$WORK/notes.md" --output "$WORK/triage.md" > /dev/null || status=$?
+    --apply --require-clean --notes-output "$WORK/notes.md" --pending-output "$WORK/pending" \
+    --output "$WORK/triage.md" > /dev/null || status=$?
 
-  if [ "$status" -eq 4 ] || [ "$status" -eq 5 ]; then
-    # Nothing written this time. If an earlier run already pushed this exact
-    # request (same text) but stopped before publishing, finish that run;
-    # refusal reasons that appeared since then don't undo a pushed commit.
+  if { [ "$status" -eq 4 ] || [ "$status" -eq 5 ]; } && [ "$(cat "$WORK/pending")" = 0 ]; then
+    # Nothing written and nothing left to change. If an earlier run already
+    # pushed this exact request (same text) but stopped before publishing,
+    # finish that run: main already holds what was accepted. publish() still
+    # re-checks the issue and leaves it open if the situation changed.
     previous=$(git log -1 --format=%h --grep="^Request: $request_hash\$" HEAD)
     if [ -n "$previous" ] && [ "$(git log -1 --format=%s "$previous")" = "$APPLY_SUBJECT" ]; then
       echo "already applied in $previous; finishing publication"
