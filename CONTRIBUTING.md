@@ -260,7 +260,23 @@ For issues with the `game-update` label (the issue form adds it):
 
 ### Applying an Issue
 
-Maintainers apply accepted changes locally, on a branch from an up-to-date `main` (the script reads `whdload_db.json` and the issue through an authenticated `gh` CLI):
+Read the bot's comment, then add the `accepted` label. `.github/workflows/apply.yml` (script: `.github/scripts/apply-request.sh`) then:
+
+1. applies the request to `builder/` with `triage_issue.py --apply --require-clean`;
+2. rebuilds the database from the current upstream XML and runs the same checks as pull requests;
+3. commits to `main` as "Apply settings from #N" (crediting whoever added the label) and starts the sync, which publishes the change;
+4. closes the issue with a comment listing the database entries that changed.
+
+It applies nothing, comments why and removes the `accepted` label when:
+- the archive is not in the database (add a snippet first);
+- an older open request covers the same archive;
+- the bot listed anything under "Needs a maintainer";
+- the database already has these settings;
+- the checks fail with the changes.
+
+Fix the cause (or edit the request), then add the label again. Only people who can label issues (triage access or higher) can trigger this. To re-run it without relabelling, use the "Apply Accepted Request" workflow's **Run workflow** button with the issue number.
+
+For anything the bot can't apply on its own (hand-edited settings, snippets, partial requests), apply locally on a branch from an up-to-date `main`. The script reads `whdload_db.json`, and reads the issue through an authenticated `gh` CLI:
 
 ```bash
 git switch -c game-<subpath> origin/main
@@ -268,9 +284,7 @@ python3 converter/triage_issue.py --issue <N> --apply
 git diff
 ```
 
-This writes the settings and custom controller files directly. Commit the changes and open a pull request with `Fixes #N` in the description. Before merging, check that the PR run's job summary lists only the entries you expect under "Entries changed by this PR".
-
-After the merge, the sync run on `main` publishes the change; its job summary lists it under "Changes since the last sync".
+Commit, open a pull request with `Fixes #N`, and check that the PR run's job summary lists only the entries you expect under "Entries changed by this PR". After the merge, the sync run on `main` publishes the change; its job summary lists it under "Changes since the last sync".
 
 ## How Updates Reach Amiberry Users
 

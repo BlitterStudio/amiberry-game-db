@@ -1,0 +1,56 @@
+name: Apply Accepted Request
+
+# A maintainer adds the `accepted` label to a game-update issue. The request is
+# applied to builder/, checked, committed to main and published; the issue is
+# closed with the resulting database changes. Anything that needs a person
+# (not in the database, older duplicate, values the settings cannot express,
+# failed checks) is reported on the issue instead and the label is removed.
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to apply
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: apply-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'accepted' && contains(github.event.issue.labels.*.name, 'game-update'))
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE: ${{ github.event.issue.number || inputs.issue }}
+      UPSTREAM_XML: /tmp/whdload_db.xml
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install jsonschema
+
+      - name: Download upstream XML
+        run: |
+          curl -fsSL -o "$UPSTREAM_XML" \
+            "https://raw.githubusercontent.com/HoraceAndTheSpider/Amiberry-XML-Builder/master/whdload_db.xml"
+
+      - name: Apply, check, commit and publish
+        run: bash .github/scripts/apply-request.sh "$ISSUE"

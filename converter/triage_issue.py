@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Turn a "Game Settings Update" issue into concrete settings changes.
 
-    triage_issue.py --issue N            print the triage comment (Markdown)
-    triage_issue.py --issue N --apply    also write the changes to builder/
+    triage_issue.py --issue N                            print the triage comment (Markdown)
+    triage_issue.py --issue N --apply                    also write the changes to builder/
+    triage_issue.py --issue N --apply --require-clean    write only if nothing needs a person
+    triage_issue.py --list-duplicates                    open requests that should be labelled duplicate
 
 Reads issues with the authenticated `gh` CLI. The comment lists the matched
 database entry, every archive an "all versions" change would affect, the exact
 file changes, the resulting hardware, and other open issues for the same
-archive or game. Exit status 3 means another open issue targets the same
-archive (the workflow labels the issue `duplicate`).
+archive or game. Exit status 3 means an older open issue targets the same
+archive (the workflow labels the issue `duplicate`); 4 means --require-clean
+refused to apply.
 """
 
 import argparse
@@ -357,7 +360,9 @@ def related_issues(number: int, filename: str, sha1: str, entry: dict | None, ga
     return older, newer, same_game
 
 
-def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str) -> tuple[str, bool, EditableSettings | None]:
+def triage(issue: dict, others: list[dict], games: list[dict],
+           builder_dir: str) -> tuple[str, bool, EditableSettings | None, list[str]]:
+    """Return (comment, has an older duplicate, pending settings or None, problems)."""
     form = parse_form(issue.get("body", ""))
     filename = field(form, "whdload archive filename")
     sha1 = field(form, "sha1 hash").lower()
@@ -366,7 +371,7 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
     if not filename:
         out += ["This issue does not use the Game Settings Update form (no archive filename), "
                 "so there is nothing to check automatically."]
-        return "\n".join(out) + "\n", False, None
+        return "\n".join(out) + "\n", False, None, []
 
     # Only the newer request of a pair is the duplicate; the oldest one stays open.
     older, newer, same_game = related_issues(issue["number"], filename, sha1, entry, games, others)
@@ -386,7 +391,7 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
         out += [f"`{filename}` {('(' + sha1 + ') ') if sha1 else ''}is not in the database. "
                 "A maintainer needs to add it as a snippet in `builder/snippets/` "
                 "(see CONTRIBUTING.md); the settings can then be applied.", ""]
-        return "\n".join(out) + "\n", bool(older), None
+        return "\n".join(out) + "\n", bool(older), None, []
 
     settings = EditableSettings(builder_dir)
     hardware = entry.get("hardware", {})
@@ -420,9 +425,24 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
     if problems:
         out += ["### Needs a maintainer", ""] + [f"- {p}" for p in problems] + [""]
 
-    out += ["Maintainers: `python3 converter/triage_issue.py --issue "
-            f"{issue['number']} --apply` writes these changes; open a PR with `Fixes #{issue['number']}`."]
-    return "\n".join(out) + "\n", bool(older), settings
+    out += ["Maintainers: add the `accepted` label to apply these changes and publish them. "
+            "Locally, `python3 converter/triage_issue.py --issue "
+            f"{issue['number']} --apply` writes them under `builder/`."]
+    return "\n".join(out) + "\n", bool(older), settings, problems
+
+
+def refusal_reasons(duplicate: bool, settings: EditableSettings | None, problems: list[str]) -> list[str]:
+    """Why a request cannot be applied unattended; empty when it can."""
+    if settings is None:
+        return ["The archive is not in the database (or the issue does not use the form). "
+                "Add a snippet first (see CONTRIBUTING.md), then label the issue again."]
+    reasons = []
+    if duplicate:
+        reasons.append("An older open request covers the same archive; apply or close that one first.")
+    reasons += problems
+    if not reasons and not settings.changes:
+        reasons.append("Nothing to change: the database already has these settings.")
+    return reasons
 
 
 def duplicate_numbers(issues: list[dict]) -> list[int]:
@@ -454,7 +474,11 @@ def main() -> None:
     parser.add_argument("--db", default=os.path.join(REPO_ROOT, "whdload_db.json"))
     parser.add_argument("--builder-dir", default=DEFAULT_BUILDER_DIR)
     parser.add_argument("--apply", action="store_true", help="write the changes to builder/")
-    parser.add_argument("--output", help="also write the comment to this file")
+    parser.add_argument("--require-clean", action="store_true",
+                        help="with --apply: write nothing and exit 4 unless the request is unambiguous "
+                             "(in the database, no older duplicate, nothing flagged for a maintainer, "
+                             "something to change); the reasons go to --output")
+    parser.add_argument("--output", help="also write the comment (or, on refusal, the reasons) to this file")
     args = parser.parse_args()
 
     others = gh_json("issue", "list", "-R", args.repo, "--state", "open", "--label", "game-update",
@@ -466,8 +490,19 @@ def main() -> None:
     with open(args.db, encoding="utf-8") as f:
         games = json.load(f)["games"]
     issue = gh_json("issue", "view", str(args.issue), "-R", args.repo, "--json", "number,body")
-    comment, duplicate, settings = triage(issue, others, games, args.builder_dir)
+    comment, duplicate, settings, problems = triage(issue, others, games, args.builder_dir)
     sys.stdout.reconfigure(encoding="utf-8")
+
+    if args.apply and args.require_clean:
+        reasons = refusal_reasons(duplicate, settings, problems)
+        if reasons:
+            text = "Not applied:\n\n" + "".join(f"- {r}\n" for r in reasons)
+            print(text, end="")
+            if args.output:
+                with open(args.output, "w", encoding="utf-8") as f:
+                    f.write(text)
+            sys.exit(4)
+
     print(comment, end="")
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
