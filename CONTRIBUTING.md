@@ -152,7 +152,9 @@ pip install -r builder/requirements.txt
 python3 builder/make_snippet.py /path/to/Game_v1.0.lha [More_v1.0.lha ...]
 ```
 
-This writes `builder/snippets/<archive name>` with the archive's SHA1, subpath, slaves, data paths, custom fields, default slave and variant UUID. It generates the display name from the subpath the same way the upstream builder does; pass `--name "Display Name"` to set it yourself, or `--stdout` to print instead of writing. Settings for the game (screen, ports, CPU and so on) go in `builder/settings` as usual.
+This writes a `<game>` element to `builder/snippets/<archive name>` with the archive's SHA1, subpath, slaves, data paths, custom fields, default slave and variant UUID. It generates the display name from the subpath the same way the upstream builder does; pass `--name "Display Name"` to set it yourself, or `--stdout` to print instead of writing. Settings for the game (screen, ports, CPU and so on) go in `builder/settings` as usual.
+
+Each SHA1 may appear in only one snippet element; the linter fails otherwise. Archives that share a name but differ in SHA1 get one element each in the same file. If the archive already has a snippet, `make_snippet.py` refuses unless you pass `--force`, which replaces just that element.
 
 Checked against 18 archives that are already in the database: the generated entries match the upstream ones exactly, except that `make_snippet.py` also records `cpu: 68020` when a slave header requires it.
 
@@ -212,7 +214,7 @@ CI checks:
    - Malformed value lines or offsets outside valid ranges.
    - Slaves listed in `WHD_DefaultSlave.txt` or `WHD_DataPath.txt` missing from the archive, and `archive/slave` keys anywhere except `WHD_DataPath.txt`.
    - Invalid syntax in `builder/customcontrols/` files.
-   - Duplicate SHA1 values in the generated database.
+   - Duplicate SHA1 values in the generated database, or in two snippet `<game>` elements.
    - Schema conformance against `schema/whdload_db.schema.json`.
 4. **Reports entry changes**: Generates a Markdown diff with `converter/diff_db.py` and writes it to the GitHub Actions job summary. Check the summary tab of the PR run to inspect all added, removed, or modified entries.
 
