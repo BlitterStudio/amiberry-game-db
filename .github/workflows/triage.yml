@@ -1,0 +1,62 @@
+name: Triage Game Settings Request
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to (re)check
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: triage-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.issue.labels.*.name, 'game-update') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'game-update'))
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE: ${{ github.event.issue.number || inputs.issue }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check request against the database
+        id: triage
+        run: |
+          status=0
+          python3 converter/triage_issue.py --issue "$ISSUE" --output /tmp/comment.md || status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
+            exit "$status"
+          fi
+          echo "duplicate=$([ "$status" -eq 3 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Post or update the bot comment
+        run: |
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- game-db-triage -->"))) | .id' | head -n 1)
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F body=@/tmp/comment.md > /dev/null
+          else
+            gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
+          fi
+
+      - name: Label duplicate
+        if: steps.triage.outputs.duplicate == 'true'
+        run: gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label duplicate
