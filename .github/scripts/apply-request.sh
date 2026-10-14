@@ -46,13 +46,20 @@ drop_label() {
 current_body() { gh issue view "$ISSUE" -R "$REPO" --json body --jq .body; }
 
 approval_lost() {  # print why the accepted request no longer stands ("closed" if closed), or nothing
+  # Fails (non-zero) when GitHub can't be read, so callers stop instead of
+  # mistaking an API error for a closed or edited issue.
   dry && return 0
-  if [ "$(gh issue view "$ISSUE" -R "$REPO" --json state --jq .state)" != OPEN ]; then
-    echo closed
-  elif ! current_body | cmp -s "$snapshot" -; then
+  local info
+  info=$(retry gh issue view "$ISSUE" -R "$REPO" --json state,labels \
+           --jq '.state + " " + ([.labels[].name] | index("accepted") != null | tostring)') || return 1
+  retry current_body > "$WORK/current.md" || return 1
+  case "$info" in
+    OPEN\ *) ;;
+    *) echo closed; return 0 ;;
+  esac
+  if ! cmp -s "$snapshot" "$WORK/current.md"; then
     echo "the issue was edited after it was accepted"
-  elif [ "${REQUIRE_LABEL:-0}" = 1 ] && \
-       [ "$(gh issue view "$ISSUE" -R "$REPO" --json labels --jq '[.labels[].name] | index("accepted") != null')" != true ]; then
+  elif [ "${REQUIRE_LABEL:-0}" = 1 ] && [ "$info" != "OPEN true" ]; then
     echo "the accepted label was removed"
   fi
 }
@@ -115,6 +122,7 @@ for attempt in 1 2 3 4 5; do
   if ! dry; then
     git fetch -q origin main
     git reset -q --hard origin/main
+    git clean -qfd builder  # files a rejected attempt created
   fi
 
   python3 converter/xml_to_json.py "$UPSTREAM_XML" "$WORK/base.json" > /dev/null
