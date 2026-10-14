@@ -31,7 +31,6 @@ OFFSET_V_RANGE = (-20, 20)
 # Plain list files: one subpath per line.
 FLAG_FILES = (
     "Chipset_AGA.txt",
-    "Chipset_FastCopper.txt",
     "Chipset_ForceNTSC.txt",
     "Chipset_ImmediateBlitter.txt",
     "Control_CD32.txt",
@@ -76,7 +75,9 @@ EXCLUSIVE_GROUPS = {
 }
 
 # Hardware keys fully determined by settings + archive filename. Values for
-# these keys coming from upstream are replaced.
+# these keys coming from upstream are replaced. fast_copper is listed so the
+# upstream value is always dropped: only Amiberry-Lite uses it, and Lite reads
+# Horace's XML directly, so it has no place in whdload_db.json.
 CONTROLLED_HARDWARE_KEYS = frozenset({
     "blitter", "clock", "cpu_24bitaddressing", "z3_ram", "cpu_compatible",
     "cpu_exact", "fast_copper", "jit", "ntsc", "primary_control", "port0",
@@ -191,8 +192,6 @@ def settings_hardware(filename: str, subpath: str, settings: Settings) -> dict:
         hw["cpu_compatible"] = False
     if listed("CPU_CycleExact.txt"):
         hw["cpu_exact"] = True
-    if listed("Chipset_FastCopper.txt"):
-        hw["fast_copper"] = "true"  # upstream emits the string; Amiberry does not read it yet
     if listed("CPU_ForceJIT.txt"):
         hw["jit"] = True
     if listed("Chipset_ForceNTSC.txt") or "NTSC" in filename:
