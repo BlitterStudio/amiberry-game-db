@@ -292,8 +292,8 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
     subpath, filename = entry["subpath"], entry["filename"]
     archive = archive_key(entry, games)
 
-    for heading, value in form.items():
-        if heading not in KNOWN_HEADINGS and value.strip().lower() not in EMPTY:
+    for heading in form:
+        if heading not in KNOWN_HEADINGS:
             problems.append(f"Unrecognised section `{heading}`; this has to be handled by hand.")
 
     chipset = field(form, "chipset").lower()
