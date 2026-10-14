@@ -54,17 +54,53 @@ PORT_FILES = ["Control_CD32.txt", "Control_Port0_Mouse.txt", "Control_Port0_CD32
 # Issue parsing
 # ---------------------------------------------------------------------------
 
+# Exact form headings (lower-cased) -> section key. Current form, then the
+# first version of the form. Anything else is an unknown section.
+HEADING_KEYS = {
+    "game name": "game name",
+    "whdload archive filename": "whdload archive filename",
+    "sha1 hash": "sha1 hash",
+    "amiberry version tested": "amiberry version tested",
+    "chipset (all versions)": "chipset",
+    "cpu (all versions)": "cpu",
+    "cpu clock speed (all versions)": "cpu clock speed",
+    "zorro iii ram (all versions)": "zorro iii ram",
+    "port 0 / mouse port (all versions)": "port 0",
+    "port 1 / joystick port (all versions)": "port 1",
+    "screen height (all versions)": "screen height",
+    "screen width (all versions)": "screen width",
+    "horizontal screen offset (all versions)": "horizontal screen offset",
+    "vertical screen offset (all versions)": "vertical screen offset",
+    "turn on (all versions)": "turn on",
+    "default slave (this archive)": "default slave",
+    "data path (this archive)": "data path",
+    "custom controller mappings (all versions)": "custom controller mappings",
+    "additional notes": "additional notes",
+    "chipset": "chipset",
+    "cpu": "cpu",
+    "primary control": "primary control",
+    "cpu clock speed": "cpu clock speed",
+    "additional settings": "additional settings",
+    "screen height (if non-default)": "screen height",
+    "screen width (if non-default)": "screen width",
+    "custom controller mappings": "custom controller mappings",
+}
+
+
 def form_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
-    """(text before the first heading, [(normalised heading, value), ...] in order)."""
+    """(text before the first heading, [(section key, value), ...] in order).
+
+    Unknown headings keep their raw (lower-cased) text as the key, so they are
+    reported instead of being folded into a known section.
+    """
     blocks = re.split(r"^### ", body or "", flags=re.M)
     sections = []
     for block in blocks[1:]:
         heading, _, value = block.partition("\n")
-        key = re.sub(r"\s*\((all versions|this archive|if non-default)\)", "", heading.strip()).lower()
-        key = re.sub(r"\s*/.*$", "", key)  # "port 0 / mouse port" -> "port 0"
+        raw = heading.strip().lower()
         value = value.strip()
         fenced = re.fullmatch(r"```\w*\n(.*?)\n?```", value, flags=re.S)
-        sections.append((key, fenced.group(1).strip() if fenced else value))
+        sections.append((HEADING_KEYS.get(raw, raw), fenced.group(1).strip() if fenced else value))
     return blocks[0], sections
 
 
@@ -239,13 +275,8 @@ def archive_key(entry: dict, games: list[dict]) -> str:
     return entry["sha1"] if shared else entry["filename"]
 
 
-# Issue-form headings (normalised by parse_form), current form and the first one.
-KNOWN_HEADINGS = {
-    "game name", "whdload archive filename", "sha1 hash", "amiberry version tested", "chipset", "cpu",
-    "cpu clock speed", "zorro iii ram", "port 0", "port 1", "screen height", "screen width",
-    "horizontal screen offset", "vertical screen offset", "turn on", "default slave", "data path",
-    "custom controller mappings", "additional notes", "primary control", "additional settings",
-}
+# Section keys the request may contain.
+KNOWN_HEADINGS = set(HEADING_KEYS.values())
 PORT_NAMES = {"joystick": "joy", "mouse": "mouse", "cd32 pad": "cd32"}
 # Exact chipset options (lower-cased), current form and the first one.
 CHIPSET_OPTIONS = {"aga": "aga", "cd32": "cd32", "cd32 (aga with cd32 pads in both ports)": "cd32"}
