@@ -61,7 +61,7 @@ approval_lost() {  # print why the accepted request no longer stands ("closed" i
   # Fails (non-zero) when GitHub can't be read, so callers stop instead of
   # mistaking an API error for a closed or edited issue.
   dry && return 0
-  local info
+  local info duplicates
   info=$(retry gh issue view "$ISSUE" -R "$REPO" --json state,labels \
            --jq '.state + " " + ([.labels[].name] | index("accepted") != null | tostring)') || return 1
   retry current_body > "$WORK/current.md" || return 1
@@ -71,8 +71,16 @@ approval_lost() {  # print why the accepted request no longer stands ("closed" i
   esac
   if ! cmp -s "$snapshot" "$WORK/current.md"; then
     echo "the issue was edited after it was accepted"
+    return 0
   elif [ "${REQUIRE_LABEL:-0}" = 1 ] && [ "$info" != "OPEN true" ]; then
     echo "the accepted label was removed"
+    return 0
+  fi
+  # Another request may have been opened or reopened for the same archive
+  # since triage ran; the older one takes precedence.
+  duplicates=$(retry python3 converter/triage_issue.py --list-duplicates) || return 1
+  if grep -qx "$ISSUE" <<< "$duplicates"; then
+    echo "an older open request now covers the same archive"
   fi
 }
 
