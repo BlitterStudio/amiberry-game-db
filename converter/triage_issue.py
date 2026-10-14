@@ -322,13 +322,23 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
             else:
                 problems.append(f"{heading.capitalize()} `{value}` must be an integer from {bounds[0]} to {bounds[1]}.")
 
+    # Every line of a checkbox section must be a known option, ticked or not;
+    # anything else (an added instruction) needs a person.
+    known_options = set(FLAG_LABELS) | {"cpu compatible mode"}
+    for heading in ("turn on", "additional settings"):
+        for line in form.get(heading, "").splitlines():
+            line = line.strip()
+            if not line or line.lower() in EMPTY:
+                continue
+            row = re.fullmatch(r"- \[[ xX]\] (.+)", line)
+            if not row or row.group(1).strip().lower() not in known_options:
+                problems.append(f"Unrecognised line `{line}` under {heading.title()}.")
+
     for label in checked(form, "turn on", "additional settings"):
         if label in FLAG_LABELS:
             settings.add(FLAG_LABELS[label], subpath)
         elif label == "cpu compatible mode":
             problems.append("\"CPU compatible mode\" is ambiguous (it is on by default); say whether it should be turned off.")
-        else:
-            problems.append(f"Unrecognised option `{label}`.")
 
     slave = field(form, "default slave")
     if slave:
