@@ -2,6 +2,12 @@
 
 Scans WHDLoad LHA archives and builds the `whdload_db.json` game database.
 
+> **Not used by the published database.** `whdload_db.json` on `main` is built by `.github/workflows/sync.yml` from Horace's XML (see [CONTRIBUTING.md](../CONTRIBUTING.md)). The cron job below commits `whdload_db.json` too, and the next sync run would overwrite it. To switch to this builder, change `sync.yml` first. Known differences from the current output:
+> - Game names are formatted differently (`Pinball Illusions AGA` instead of `Pinball Illusions [AGA]`, `Battle Squadron NTSC` instead of `Battle Squadron (NTSC)`).
+> - `cpu: 68020` is added from slave headers.
+>
+> Checked against 18 archives; hardware, slaves and default slaves otherwise match.
+
 ## Quick Start
 
 ### 1. Install dependencies
