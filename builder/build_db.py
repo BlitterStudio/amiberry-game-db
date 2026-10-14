@@ -11,17 +11,19 @@ Rewrite of HoraceAndTheSpider's amiberry_xml_builder.py.
 import argparse
 import hashlib
 import json
-import math
 import os
 import posixpath
 import struct
 import sys
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import lhafile
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "converter"))
+from overrides import Settings, apply_overrides  # noqa: E402
+from xml_to_json import load_snippets  # noqa: E402
 
 
 # ============================================================================
@@ -229,270 +231,32 @@ def scan_archive(archive_path: str) -> dict | None:
 
 
 # ============================================================================
-# Settings overrides
+# Header-derived hardware
 # ============================================================================
 
-class SettingsDB:
-    """Reads Horace-format settings/*.txt and customcontrols/ files."""
+def detected_hardware(slaves: list[dict]) -> dict:
+    """Requirements read from slave headers.
 
-    def __init__(self, builder_dir: str):
-        self.settings_dir = os.path.join(builder_dir, "settings")
-        self.customcontrols_dir = os.path.join(builder_dir, "customcontrols")
-        self._cache: dict[str, list[str]] = {}
-
-    def _load_list(self, filename: str) -> list[str]:
-        if filename in self._cache:
-            return self._cache[filename]
-        path = os.path.join(self.settings_dir, filename)
-        if not os.path.isfile(path):
-            self._cache[filename] = []
-            return []
-        with open(path) as f:
-            lines = [line.strip() for line in f if line.strip()]
-        self._cache[filename] = lines
-        return lines
-
-    def check_list(self, filename: str, game_name: str) -> bool:
-        """Check if game_name appears in a settings list file."""
-        for line in self._load_list(filename):
-            if line == game_name:
-                return True
-        return False
-
-    def value_list(self, filename: str, game_name: str) -> str:
-        """Get a value associated with game_name from a settings file (word1=name, word2=value)."""
-        for line in self._load_list(filename):
-            parts = line.split()
-            if parts and parts[0] == game_name and len(parts) >= 2:
-                return parts[1]
-        return ""
-
-    def get_slave_datapath(self, archive_name: str, slave_name: str) -> str:
-        """Get a datapath override for an archive or a specific slave in that archive."""
-        slave_key = f"{archive_name}/{slave_name}"
-        return (
-            self.value_list("WHD_DataPath.txt", slave_key)
-            or self.value_list("WHD_DataPath.txt", archive_name)
-        )
-
-    def get_custom_controls(self, subpath: str) -> list[str]:
-        """Load custom controls for a game."""
-        path = os.path.join(self.customcontrols_dir, subpath)
-        if not os.path.isfile(path):
-            return []
-        with open(path) as f:
-            return [line.strip() for line in f
-                    if "amiberry_custom" in line and line.strip()]
-
-
-def round_up_power_of_2(value_mb: float) -> int:
-    """Round up to next power of 2 (in MB), matching Horace's logic."""
-    for i in range(8):
-        low = 2 ** (i - 1) if i > 0 else 0
-        high = 2 ** i
-        if low < value_mb < high:
-            return high
-    return max(1, int(value_mb))
-
-
-def build_hardware(
-    slaves: list[dict],
-    subpath: str,
-    filename: str,
-    settings: SettingsDB,
-) -> dict:
-    """Build structured hardware settings from slave headers + overrides."""
+    apply_overrides() adds the settings-driven keys later; these two survive
+    unless a settings file sets them explicitly.
+    """
     hw = {}
-
-    # Detect flags from slave headers
-    requires_aga = any(
-        s.get("header") and "ReqAGA" in s["header"]["flags"]
-        for s in slaves
-    )
-    requires_68020 = any(
-        s.get("header") and "Req68020" in s["header"]["flags"]
-        for s in slaves
-    )
-
-    # Chipset (from filename, settings, or slave flags)
-    is_cd32 = "_CD32" in filename
-    is_aga = "_AGA" in filename or is_cd32 or settings.check_list("Chipset_AGA.txt", subpath) or requires_aga
-
-    if is_aga:
+    if any(s.get("header") and "ReqAGA" in s["header"]["flags"] for s in slaves):
         hw["chipset"] = "aga"
-
-    # CPU (from slave flags)
-    if requires_68020:
+    if any(s.get("header") and "Req68020" in s["header"]["flags"] for s in slaves):
         hw["cpu"] = "68020"
-
-    # Blitter
-    if settings.check_list("Chipset_ImmediateBlitter.txt", subpath):
-        hw["blitter"] = "immediate"
-
-    # Fast copper
-    if settings.check_list("Chipset_FastCopper.txt", subpath):
-        hw["fast_copper"] = True
-
-    # Clock speed
-    if settings.check_list("CPU_ClockSpeed_Max.txt", subpath):
-        hw["clock"] = "max"
-    elif settings.check_list("CPU_ClockSpeed_25.txt", subpath):
-        hw["clock"] = "25"
-    elif settings.check_list("CPU_ClockSpeed_14.txt", subpath):
-        hw["clock"] = "14"
-
-    # CPU compatible
-    if settings.check_list("CPU_NoCompatible.txt", subpath):
-        hw["cpu_compatible"] = False
-
-    # CPU cycle exact
-    if settings.check_list("CPU_CycleExact.txt", subpath):
-        hw["cpu_exact"] = True
-
-    # JIT
-    if settings.check_list("CPU_ForceJIT.txt", subpath):
-        hw["jit"] = True
-
-    # NTSC
-    if settings.check_list("Chipset_ForceNTSC.txt", subpath) or "NTSC" in filename:
-        hw["ntsc"] = True
-
-    # Controls
-    use_mouse1 = settings.check_list("Control_Port0_Mouse.txt", subpath)
-    use_mouse2 = settings.check_list("Control_Port1_Mouse.txt", subpath)
-    use_cd32 = settings.check_list("Control_CD32.txt", subpath) or is_cd32
-
-    hw["primary_control"] = "mouse" if use_mouse1 else "joystick"
-
-    if use_mouse1:
-        hw["port0"] = "mouse"
-    elif use_cd32:
-        hw["port0"] = "cd32"
-    else:
-        hw["port0"] = "joy"
-
-    if use_mouse2:
-        hw["port1"] = "mouse"
-    elif use_cd32:
-        hw["port1"] = "cd32"
-    else:
-        hw["port1"] = "joy"
-
-    # Screen height
-    screen_height = ""
-    for h in ["400", "432", "480", "512", "524", "540", "568"]:
-        if settings.check_list(f"Screen_Height_{h}.txt", subpath):
-            screen_height = h
-            break
-
-    if screen_height:
-        hw["screen_autoheight"] = False
-        hw["screen_height"] = int(screen_height)
-    else:
-        hw["screen_autoheight"] = True
-
-    # Screen width
-    screen_width = "720"
-    for w in ["640", "704"]:
-        if settings.check_list(f"Screen_Width_{w}.txt", subpath):
-            screen_width = w
-            break
-
-    if screen_width != "720" or screen_height:
-        hw["screen_width"] = int(screen_width)
-
-    # Offsets
-    offset_h = settings.value_list("Screen_Offset_H.txt", subpath)
-    offset_v = settings.value_list("Screen_Offset_V.txt", subpath)
-
-    h_offset = None
-    if offset_h.lstrip("-").isdigit():
-        h_offset = max(-60, min(60, int(offset_h)))
-
-    v_offset = None
-    if offset_v.lstrip("-").isdigit():
-        v_offset = max(-20, min(20, int(offset_v)))
-
-    # Centering (disabled if offset is set)
-    hw["screen_centerh"] = "none" if h_offset is not None else "smart"
-    hw["screen_centerv"] = "none" if v_offset is not None else "smart"
-
-    if settings.check_list("Screen_NoCenter_H.txt", subpath):
-        hw["screen_centerh"] = "none"
-    if settings.check_list("Screen_NoCenter_V.txt", subpath):
-        hw["screen_centerv"] = "none"
-
-    if h_offset is not None:
-        hw["screen_offseth"] = h_offset
-    if v_offset is not None:
-        hw["screen_offsetv"] = v_offset
-
-    # Z3 RAM
-    for i in range(8):
-        z3 = 2 ** i
-        if settings.check_list(f"Memory_Z3Ram_{z3}.txt", subpath):
-            hw["z3_ram"] = z3
-            hw["cpu_24bitaddressing"] = False
-            break
-
     return hw
-
-
-# ============================================================================
-# Snippet support
-# ============================================================================
-
-def load_snippets(builder_dir: str) -> list[dict]:
-    """Load XML snippet files and convert to JSON game entries."""
-    import xml.etree.ElementTree as ET
-
-    snippet_dir = os.path.join(builder_dir, "snippets")
-    if not os.path.isdir(snippet_dir):
-        return []
-
-    # Reuse the converter's parsing logic
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from converter.xml_to_json import convert_game
-
-    entries = []
-    for snippet_file in sorted(os.listdir(snippet_dir)):
-        path = os.path.join(snippet_dir, snippet_file)
-        if not os.path.isfile(path):
-            continue
-        with open(path) as f:
-            content = f.read()
-
-        # Wrap in root element for parsing
-        xml_str = f"<root>{content}</root>"
-        try:
-            root = ET.fromstring(xml_str)
-        except ET.ParseError:
-            print(f"  Warning: failed to parse snippet {snippet_file}", file=sys.stderr)
-            continue
-
-        for game_elem in root.findall("game"):
-            entry = convert_game(game_elem)
-            entries.append(entry)
-
-    return entries
-
-
-def apply_datapath_overrides(games: list[dict], settings: SettingsDB) -> None:
-    """Apply datapath overrides to all entries, including unchanged incremental ones."""
-    for game in games:
-        archive_name = game.get("filename", "")
-        for slave in game.get("slaves", []):
-            override = settings.get_slave_datapath(archive_name, slave.get("filename", ""))
-            if override:
-                slave["datapath"] = override
-
 
 # ============================================================================
 # Main builder
 # ============================================================================
 
-def make_game_name(subpath: str) -> str:
-    """Convert subpath like 'TurricanII' to friendly name 'Turrican II'."""
+def make_game_name(subpath: str, settings: Settings) -> str:
+    """Convert subpath like 'TurricanII' to friendly name 'Turrican II'.
+
+    WHD_Longname_Fixes.txt lines are "generated name|fixed name", applied in
+    order like Horace's builder.
+    """
     import re
     # Insert spaces before capitals that follow lowercase
     name = re.sub(r"([a-z])([A-Z])", r"\1 \2", subpath)
@@ -500,11 +264,15 @@ def make_game_name(subpath: str) -> str:
     name = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", name)
     # Insert spaces after numbers that precede letters
     name = re.sub(r"(\d)([a-zA-Z])", r"\1 \2", name)
+    for line in settings.lines("WHD_Longname_Fixes.txt"):
+        find, sep, replace = line.partition("|")
+        if sep and name == find:
+            name = replace
     return name
 
 
 def build_database(scan_dir: str, builder_dir: str, existing_db: str | None = None, full_refresh: bool = False) -> dict:
-    settings = SettingsDB(builder_dir)
+    settings = Settings(builder_dir)
 
     # Load existing database for incremental mode
     existing_sha1s: set[str] = set()
@@ -555,37 +323,10 @@ def build_database(scan_dir: str, builder_dir: str, existing_db: str | None = No
 
         subpath = scan_result["subpath"]
 
-        # Determine default slave
-        default_slave_override = settings.value_list("WHD_DefaultSlave.txt", filename_no_ext)
-        default_slave = ""
+        # Default slave: the only one, else the first. WHD_DefaultSlave.txt
+        # is applied by apply_overrides() below.
+        default_slave = scan_result["slaves"][0]["filename"]
 
-        if default_slave_override:
-            # Verify override exists in slaves
-            for s in scan_result["slaves"]:
-                if s["filename"] == default_slave_override or default_slave_override in s["filename"]:
-                    default_slave = s["filename"]
-                    break
-
-        if not default_slave:
-            if len(scan_result["slaves"]) == 1:
-                default_slave = scan_result["slaves"][-1]["filename"]
-            else:
-                default_slave = scan_result["slaves"][0]["filename"]
-
-        # Build hardware settings
-        hardware = build_hardware(scan_result["slaves"], subpath, filename_no_ext, settings)
-
-        # Custom controls
-        custom_controls = settings.get_custom_controls(subpath)
-
-        # Slave libraries
-        slave_libraries = settings.check_list("WHD_Libraries.txt", subpath)
-
-        # Game name from longname fixes or subpath
-        longname = settings.value_list("WHD_Longname_Fixes.txt", subpath)
-        game_name = longname if longname else make_game_name(subpath)
-
-        # Build the entry
         slaves_out = []
         for s in scan_result["slaves"]:
             slave_entry = {
@@ -596,23 +337,18 @@ def build_database(scan_dir: str, builder_dir: str, existing_db: str | None = No
                 slave_entry["custom_fields"] = s["custom_fields"]
             slaves_out.append(slave_entry)
 
-        entry = {
+        new_entries.append({
             "filename": filename_no_ext,
             "sha1": archive_sha1,
-            "name": game_name,
+            "name": make_game_name(subpath, settings),
             "subpath": subpath,
             "variant_uuid": scan_result["variant_uuid"],
             "slave_count": len(scan_result["slaves"]),
             "slave_default": default_slave,
-            "slave_libraries": slave_libraries,
+            "slave_libraries": False,
             "slaves": slaves_out,
-            "hardware": hardware,
-        }
-
-        if custom_controls:
-            entry["custom_controls"] = custom_controls
-
-        new_entries.append(entry)
+            "hardware": detected_hardware(scan_result["slaves"]),
+        })
 
     # Load snippets
     snippet_entries = load_snippets(builder_dir)
@@ -626,7 +362,9 @@ def build_database(scan_dir: str, builder_dir: str, existing_db: str | None = No
     merged.extend(new_entries)
     merged.extend(snippet_entries)
 
-    apply_datapath_overrides(merged, settings)
+    # Every entry, including unchanged incremental ones, gets current overrides.
+    for entry in merged:
+        apply_overrides(entry, settings)
 
     # Sort by filename for stable output
     merged.sort(key=lambda g: g.get("filename", "").lower())

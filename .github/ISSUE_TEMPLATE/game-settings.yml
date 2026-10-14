@@ -1,13 +1,21 @@
 name: Game Settings Update
-description: Submit or update hardware/control settings for a WHDLoad game
+description: Suggest WHDBooter settings for a WHDLoad game
 title: "[Game] "
 labels: ["game-update"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Only fill in what should change. Leave everything else on "No change".
+
+        Settings marked **(all versions)** apply to every archive of the game that shares the same folder name, for example all `Turrican2_*.lha` versions. Default slave and data path apply to this archive only.
+
+        A bot replies with the current database entry for the archive and the exact changes needed, and flags other open requests for the same game. See [CONTRIBUTING.md](https://github.com/BlitterStudio/amiberry-game-db/blob/main/CONTRIBUTING.md) for how requests reach Amiberry.
+
   - type: input
     id: game_name
     attributes:
       label: Game Name
-      description: The full name of the game
       placeholder: "e.g., Turrican II"
     validations:
       required: true
@@ -16,7 +24,7 @@ body:
     id: filename
     attributes:
       label: WHDLoad Archive Filename
-      description: The LHA filename (without extension) as shown in Amiberry
+      description: The LHA filename without the .lha extension
       placeholder: "e.g., Turrican2_v1.3_Psygnosis"
     validations:
       required: true
@@ -25,85 +33,172 @@ body:
     id: sha1
     attributes:
       label: SHA1 Hash
-      description: SHA1 hash of the LHA file (shown in Amiberry logs, or use sha1sum)
+      description: SHA1 of the .lha file. Amiberry's log shows it, or use `sha1sum` / `Get-FileHash -Algorithm SHA1`. Needed when several archives share the same filename.
       placeholder: "e.g., a1b2c3d4e5..."
 
-  - type: dropdown
-    id: chipset
+  - type: input
+    id: amiberry_version
     attributes:
-      label: Chipset
-      options:
-        - OCS/ECS (default)
-        - AGA
-        - CD32
-
-  - type: dropdown
-    id: cpu
-    attributes:
-      label: CPU
-      options:
-        - "68000"
-        - "68010"
-        - "68020"
-        - "68040"
-
-  - type: dropdown
-    id: primary_control
-    attributes:
-      label: Primary Control
-      options:
-        - Joystick
-        - Mouse
+      label: Amiberry Version Tested
+      placeholder: "e.g., 8.4.1"
     validations:
       required: true
 
   - type: dropdown
+    id: chipset
+    attributes:
+      label: Chipset (all versions)
+      description: Archives with _AGA or _CD32 in the filename are always AGA.
+      options:
+        - No change
+        - AGA
+        - CD32 (AGA with CD32 pads in both ports)
+      default: 0
+
+  - type: dropdown
+    id: cpu
+    attributes:
+      label: CPU (all versions)
+      options:
+        - No change
+        - "68000"
+        - "68010"
+        - "68020"
+        - "68040"
+      default: 0
+
+  - type: dropdown
     id: clock
     attributes:
-      label: CPU Clock Speed
+      label: CPU Clock Speed (all versions)
       options:
-        - Default
+        - No change
         - "7 MHz"
         - "14 MHz"
         - "25 MHz"
         - "28 MHz"
         - Max
+      default: 0
+
+  - type: dropdown
+    id: z3_ram
+    attributes:
+      label: Zorro III RAM (all versions)
+      options:
+        - No change
+        - "1 MB"
+        - "2 MB"
+        - "4 MB"
+        - "8 MB"
+        - "16 MB"
+        - "32 MB"
+        - "64 MB"
+        - "128 MB"
+      default: 0
+
+  - type: dropdown
+    id: port0
+    attributes:
+      label: Port 0 / mouse port (all versions)
+      description: Mouse here also makes mouse the primary control.
+      options:
+        - No change
+        - Joystick
+        - Mouse
+        - CD32 pad
+      default: 0
+
+  - type: dropdown
+    id: port1
+    attributes:
+      label: Port 1 / joystick port (all versions)
+      options:
+        - No change
+        - Joystick
+        - Mouse
+        - CD32 pad
+      default: 0
+
+  - type: dropdown
+    id: screen_height
+    attributes:
+      label: Screen Height (all versions)
+      options:
+        - No change
+        - Automatic
+        - "400"
+        - "432"
+        - "480"
+        - "512"
+        - "524"
+        - "540"
+        - "568"
+      default: 0
+
+  - type: dropdown
+    id: screen_width
+    attributes:
+      label: Screen Width (all versions)
+      options:
+        - No change
+        - "640"
+        - "704"
+        - "720"
+      default: 0
+
+  - type: input
+    id: offset_h
+    attributes:
+      label: Horizontal Screen Offset (all versions)
+      description: -60 to 60. Setting an offset turns off horizontal centering.
+
+  - type: input
+    id: offset_v
+    attributes:
+      label: Vertical Screen Offset (all versions)
+      description: -20 to 20. Setting an offset turns off vertical centering.
 
   - type: checkboxes
     id: flags
     attributes:
-      label: Additional Settings
+      label: Turn On (all versions)
+      description: Tick only what the game needs. To turn something off, say so in Additional Notes.
       options:
-        - label: NTSC mode required
-        - label: JIT recommended
+        - label: NTSC
+        - label: JIT
         - label: Immediate blitter
-        - label: CPU compatible mode
+        - label: Turn off CPU compatible mode
         - label: Cycle-exact CPU
-        - label: Slave needs libraries
+        - label: Turn off horizontal centering
+        - label: Turn off vertical centering
+        - label: Needs extra libraries (e.g. xpk)
 
   - type: input
-    id: screen_height
+    id: default_slave
     attributes:
-      label: Screen Height (if non-default)
-      placeholder: "e.g., 480"
+      label: Default Slave (this archive)
+      description: Slave filename to start instead of the current default
+      placeholder: "e.g., 3DPool.Slave"
 
   - type: input
-    id: screen_width
+    id: datapath
     attributes:
-      label: Screen Width (if non-default)
-      placeholder: "e.g., 640"
+      label: Data Path (this archive)
+      description: Data directory the slave expects
+      placeholder: "e.g., data"
 
   - type: textarea
     id: custom_controls
     attributes:
-      label: Custom Controller Mappings
-      description: One mapping per line (amiberry_custom format)
+      label: Custom Controller Mappings (all versions)
+      description: One mapping per line, in the format Amiberry writes to .uae files. These replace any existing mappings for the game.
       placeholder: |
         joyport1_amiberry_custom_none_b=Joy2 Up
         joyport1_amiberry_custom_none_x=Space
+      render: text
 
   - type: textarea
     id: notes
     attributes:
       label: Additional Notes
-      description: Any other compatibility notes, tested configurations, etc.
+      description: What goes wrong without these settings, what you tested, anything to turn off.

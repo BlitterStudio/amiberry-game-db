@@ -51,15 +51,12 @@ See [`schema/whdload_db.schema.json`](schema/whdload_db.schema.json) for the ful
 
 ## Contributing
 
-### Submit game settings
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full instructions.
 
-Use the [Game Settings Update](../../issues/new?template=game-settings.yml) issue template to submit or update settings for a game.
+- **Suggest settings**: Use the [Game Settings Update](../../issues/new?template=game-settings.yml) issue template.
+- **Direct contributions**: Open a pull request modifying files under `builder/settings/`, `builder/customcontrols/`, or `builder/snippets/`.
 
-### Direct contributions
-
-1. Fork this repo
-2. Edit `whdload_db.json` (or add an override in `overrides/`)
-3. Submit a PR — CI will validate the JSON against the schema
+Do not edit `whdload_db.json` directly. It is generated automatically, and CI rejects pull requests modifying it.
 
 ## Building from Source
 
@@ -67,7 +64,12 @@ The database can be rebuilt from WHDLoad LHA archives using the included builder
 
 ## Data Source
 
-Currently synced daily from [HoraceAndTheSpider's Amiberry-XML-Builder](https://github.com/HoraceAndTheSpider/Amiberry-XML-Builder) and converted to JSON. Being migrated to a self-hosted builder that scans LHA archives directly.
+The database is built in layers:
+1. **Base layer**: downloaded from [HoraceAndTheSpider's Amiberry-XML-Builder](https://github.com/HoraceAndTheSpider/Amiberry-XML-Builder) `whdload_db.xml`.
+2. **Snippets**: XML entries in `builder/snippets/` added or replaced by this repository.
+3. **Overrides**: settings in `builder/settings/` and controller mappings in `builder/customcontrols/` applied to every entry.
+
+The pipeline rebuilds `whdload_db.json` daily at 08:00 UTC and on every merge to `main` touching builder, converter, or schema files. A self-hosted builder that scans LHA archives directly (`builder/build_db.py`) is also included.
 
 ## License
 

@@ -135,49 +135,30 @@ The cron job needs push access to the repo. Options:
 
 ## Data Files
 
+Both `build_db.py` and the daily converter (`converter/xml_to_json.py`) share override logic in `converter/overrides.py`. Settings and custom controls apply to every database entry on every run, not only newly scanned archives.
+
 ### `settings/`
 
-Override files that apply hardware settings to games by subpath. One game name per line.
+Override files that apply hardware settings to games. Most files are plain text lists keyed by subpath (one game per line); value files use `<key> <value>`.
 
-| File | Effect |
-|------|--------|
-| `Chipset_AGA.txt` | Force AGA chipset |
-| `Chipset_ForceNTSC.txt` | Force NTSC mode |
-| `Chipset_ImmediateBlitter.txt` | Enable immediate blitter |
-| `Chipset_FastCopper.txt` | Enable fast copper |
-| `Control_CD32.txt` | Use CD32 pad |
-| `Control_Port0_Mouse.txt` | Primary control = mouse |
-| `Control_Port1_Mouse.txt` | Port 1 = mouse |
-| `CPU_ClockSpeed_25.txt` | Force 25 MHz CPU clock |
-| `CPU_ClockSpeed_Max.txt` | Force max CPU speed |
-| `CPU_CycleExact.txt` | Enable cycle-exact CPU |
-| `CPU_ForceJIT.txt` | Enable JIT |
-| `CPU_NoCompatible.txt` | Disable CPU compatible mode |
-| `Memory_Z3Ram_16.txt` | Add 16 MB Z3 RAM |
-| `Screen_Height_*.txt` | Force specific screen height |
-| `Screen_Width_*.txt` | Force specific screen width |
-| `Screen_NoCenter_H.txt` | Disable horizontal centering |
-| `Screen_NoCenter_V.txt` | Disable vertical centering |
-| `Screen_Offset_H.txt` | Set horizontal offset (format: `GameName value`) |
-| `Screen_Offset_V.txt` | Set vertical offset (format: `GameName value`) |
-| `WHD_DataPath.txt` | Override slave datapath (format: `ArchiveName value` or `ArchiveName/SlaveName value`) |
-| `WHD_DefaultSlave.txt` | Override default slave (format: `ArchiveName SlaveName`) |
-| `WHD_Libraries.txt` | Game needs external libraries |
-| `WHD_Longname_Fixes.txt` | Override auto-generated game name |
+See the [Settings Reference in CONTRIBUTING.md](../CONTRIBUTING.md#settings-reference) for the full list of supported settings files, value file formats, and exclusive groups.
 
 ### `customcontrols/`
 
-Per-game controller mapping files. Filename = game subpath. Contents are `amiberry_custom` config lines.
+Per-game controller mapping files named by game subpath. Contents are `amiberry_custom` configuration lines. An empty file clears upstream mappings.
 
 ### `snippets/`
 
-XML snippet files for games that can't be auto-scanned (e.g., not in standard LHA format). These are parsed and merged into the database.
+XML snippet files for games that cannot be auto-scanned or are missing from upstream. These are parsed and merged into the database by SHA1.
 
 ## Migrating from Horace's Builder
 
 This builder is a rewrite of [HoraceAndTheSpider's Amiberry-XML-Builder](https://github.com/HoraceAndTheSpider/Amiberry-XML-Builder). Key differences:
 
-- Outputs JSON directly (no XML intermediate)
-- Self-contained slave header parser (no external `whdload_slave` module)
-- Incremental updates by SHA1 (faster than filename matching)
-- Settings and customcontrols are identical format — copy directly from Horace's repo
+- Outputs JSON directly without an XML intermediate.
+- Self-contained slave header parser (no external `whdload_slave` module).
+- Incremental updates by SHA1 rather than filename matching.
+- Shared override engine: `build_db.py` and `converter/xml_to_json.py` use the same rules in `converter/overrides.py`.
+- Settings and custom controls apply to every entry on every run, rather than only newly scanned archives.
+- The LHA builder preserves AGA and 68020 hardware requirements parsed from slave headers unless explicitly overridden.
+- Settings and custom controls use the same file formats as Horace's builder.

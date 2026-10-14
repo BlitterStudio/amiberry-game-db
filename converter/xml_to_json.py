@@ -4,31 +4,20 @@ Convert Horace's whdload_db.xml to structured JSON for Amiberry.
 
 Source: https://github.com/HoraceAndTheSpider/Amiberry-XML-Builder
 Output: whdload_db.json with proper typed fields and SHA1-keyed entries.
+
+On top of the upstream XML this applies, in order:
+  1. builder/snippets/*   games added or replaced by this repo (matched by SHA1)
+  2. builder/settings/*, builder/customcontrols/*   per-game overrides
+  3. de-duplication by SHA1 (the last entry wins)
 """
 
+import argparse
 import json
-import sys
+import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from pathlib import Path
 
-
-def load_datapath_overrides() -> dict[str, str]:
-    """Load archive/slave datapath overrides shared with the local builder."""
-    settings_path = Path(__file__).resolve().parents[1] / "builder" / "settings" / "WHD_DataPath.txt"
-    if not settings_path.is_file():
-        return {}
-
-    overrides: dict[str, str] = {}
-    with settings_path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) >= 2:
-                overrides[parts[0]] = parts[1]
-    return overrides
+from overrides import DEFAULT_BUILDER_DIR, Settings, apply_overrides
 
 
 def parse_hardware(text: str) -> dict:
@@ -132,10 +121,9 @@ def parse_custom_controls(text: str) -> list[str]:
     return lines
 
 
-def convert_game(game_elem: ET.Element, datapath_overrides: dict[str, str] | None = None) -> dict:
+def convert_game(game_elem: ET.Element) -> dict:
     """Convert a single <game> XML element to a dict."""
     entry = {}
-    datapath_overrides = datapath_overrides or {}
 
     # Attributes
     entry["filename"] = game_elem.get("filename", "")
@@ -178,13 +166,6 @@ def convert_game(game_elem: ET.Element, datapath_overrides: dict[str, str] | Non
         if custom_fields:
             slave["custom_fields"] = custom_fields
 
-        override = (
-            datapath_overrides.get(f"{entry['filename']}/{slave['filename']}")
-            or datapath_overrides.get(entry["filename"])
-        )
-        if override:
-            slave["datapath"] = override
-
         slaves.append(slave)
     entry["slaves"] = slaves
 
@@ -205,42 +186,139 @@ def convert_game(game_elem: ET.Element, datapath_overrides: dict[str, str] | Non
     return entry
 
 
-def convert(xml_path: str, json_path: str) -> None:
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    datapath_overrides = load_datapath_overrides()
+def load_snippets(builder_dir: str) -> list[dict]:
+    """Games from builder/snippets/*: bare <game> elements in upstream XML format."""
+    snippet_dir = os.path.join(builder_dir, "snippets")
+    if not os.path.isdir(snippet_dir):
+        return []
+    entries = []
+    for name in sorted(os.listdir(snippet_dir)):
+        path = os.path.join(snippet_dir, name)
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            root = ET.fromstring(f"<root>{f.read()}</root>")
+        entries.extend(convert_game(game_elem) for game_elem in root.findall("game"))
+    return entries
 
-    # Extract timestamp from root
-    timestamp = root.get("timestamp", "")
 
-    games = []
-    for game_elem in root.findall("game"):
-        games.append(convert_game(game_elem, datapath_overrides))
+def dedupe_by_sha1(games: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Keep the last entry for each SHA1 (upstream appends newer scans)."""
+    seen: set[str] = set()
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    for game in reversed(games):
+        if game["sha1"] in seen:
+            dropped.append(game)
+        else:
+            seen.add(game["sha1"])
+            kept.append(game)
+    kept.reverse()
+    dropped.reverse()
+    return kept, dropped
 
-    output = {
+
+def changed_fields(before: dict, after: dict) -> list[str]:
+    changes = []
+    for key in sorted(set(before) | set(after)):
+        if key == "hardware":
+            hw_before, hw_after = before.get(key, {}), after.get(key, {})
+            for hw_key in sorted(set(hw_before) | set(hw_after)):
+                if hw_before.get(hw_key) != hw_after.get(hw_key):
+                    changes.append(f"hardware.{hw_key}: {hw_before.get(hw_key)!r} -> {hw_after.get(hw_key)!r}")
+        elif key == "slaves":
+            old_slaves, new_slaves = before.get(key, []), after.get(key, [])
+            old_names = [s.get("filename") for s in old_slaves]
+            new_names = [s.get("filename") for s in new_slaves]
+            if old_names != new_names:
+                changes.append(f"slaves: {old_names!r} -> {new_names!r}")
+                continue
+            for old, new in zip(old_slaves, new_slaves):
+                for slave_key in sorted(set(old) | set(new)):
+                    if old.get(slave_key) == new.get(slave_key):
+                        continue
+                    if slave_key == "custom_fields":
+                        changes.append(f"{new['filename']} custom_fields changed")
+                    else:
+                        changes.append(f"{new['filename']} {slave_key}: "
+                                       f"{old.get(slave_key)!r} -> {new.get(slave_key)!r}")
+        elif before.get(key) != after.get(key):
+            if key == "custom_controls":
+                changes.append("custom_controls changed")
+            else:
+                changes.append(f"{key}: {before.get(key)!r} -> {after.get(key)!r}")
+    return changes
+
+
+def build(xml_path: str, builder_dir: str) -> tuple[dict, list[str]]:
+    """Build the database dict and a Markdown report of what this repo changed."""
+    root = ET.parse(xml_path).getroot()
+    upstream = [convert_game(game_elem) for game_elem in root.findall("game")]
+
+    snippets = load_snippets(builder_dir)
+    snippet_sha1s = {s["sha1"] for s in snippets}
+    replaced = [g["filename"] for g in upstream if g["sha1"] in snippet_sha1s]
+    games = [g for g in upstream if g["sha1"] not in snippet_sha1s] + snippets
+
+    settings = Settings(builder_dir)
+    changed: list[tuple[str, list[str]]] = []
+    for game in games:
+        before = json.loads(json.dumps(game))
+        apply_overrides(game, settings)
+        fields = changed_fields(before, game)
+        if fields:
+            changed.append((game["filename"], fields))
+
+    games, dropped = dedupe_by_sha1(games)
+
+    database = {
         "schema_version": 2,
         "source": "https://github.com/HoraceAndTheSpider/Amiberry-XML-Builder",
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "upstream_timestamp": timestamp,
+        "upstream_timestamp": root.get("timestamp", ""),
         "game_count": len(games),
         "games": games,
     }
 
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, separators=(",", ":"))
+    report = [
+        f"- Upstream games: {len(upstream)}",
+        f"- Snippets: {len(snippets)} ({len(replaced)} replace an upstream entry)",
+        f"- Games changed by overrides: {len(changed)}",
+        f"- Duplicate SHA1 entries removed: {len(dropped)}",
+        f"- Games written: {len(games)}",
+    ]
+    if changed:
+        report += ["", "### Changed by overrides", ""]
+        report += [f"- `{name}`: {'; '.join(fields)}" for name, fields in changed]
+    if dropped:
+        report += ["", "### Removed duplicates (an entry with the same SHA1 appears later)", ""]
+        report += [f"- `{g['filename']}` ({g['sha1']})" for g in dropped]
+    return database, report
 
-    # Also write a pretty-printed version for diffing
-    pretty_path = json_path.replace(".json", ".pretty.json")
-    with open(pretty_path, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
 
-    print(f"Converted {len(games)} games")
-    print(f"  Compact: {json_path}")
-    print(f"  Pretty:  {pretty_path}")
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("xml", help="upstream whdload_db.xml")
+    parser.add_argument("json", help="output whdload_db.json")
+    parser.add_argument("--builder-dir", default=DEFAULT_BUILDER_DIR,
+                        help="directory containing settings/, customcontrols/ and snippets/")
+    parser.add_argument("--report", help="also write the Markdown report to this file")
+    parser.add_argument("--pretty", action="store_true", help="indent the JSON output")
+    args = parser.parse_args()
+
+    database, report = build(args.xml, args.builder_dir)
+    with open(args.json, "w", encoding="utf-8") as f:
+        if args.pretty:
+            json.dump(database, f, ensure_ascii=False, indent=2)
+        else:
+            json.dump(database, f, ensure_ascii=False, separators=(",", ":"))
+
+    text = "\n".join(report) + "\n"
+    print(text, end="")
+    if args.report:
+        with open(args.report, "w", encoding="utf-8") as f:
+            f.write(text)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} <input.xml> <output.json>")
-        sys.exit(1)
-    convert(sys.argv[1], sys.argv[2])
+    main()
