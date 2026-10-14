@@ -101,8 +101,19 @@ publish() {  # $1 = pushed commit, $2 = file with the database changes (may be e
   if [ -n "$lost" ]; then
     drop_label
   elif [ "$close" = 1 ]; then
-    if dry; then echo "--- would close #$ISSUE"; else
-      retry gh issue close "$ISSUE" -R "$REPO" --reason completed; fi
+    # The sync dispatch and the comment can take a while with retries; check
+    # again so a request edited in the meantime is not closed as completed.
+    lost=$(approval_lost)
+    if [ -z "$lost" ]; then
+      if dry; then echo "--- would close #$ISSUE"; else
+        retry gh issue close "$ISSUE" -R "$REPO" --reason completed; fi
+    elif [ "$lost" != closed ]; then
+      drop_label
+      # shellcheck disable=SC2016  # literal backticks for Markdown
+      printf 'The issue was not closed: %s while publishing. Check the bot comment for the current request and add the `accepted` label again if more is needed.\n' \
+        "$lost" > "$WORK/msg.md"
+      say "$WORK/msg.md"
+    fi
   fi
 }
 

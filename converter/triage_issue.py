@@ -277,6 +277,9 @@ def archive_key(entry: dict, games: list[dict]) -> str:
 
 # Section keys the request may contain.
 KNOWN_HEADINGS = set(HEADING_KEYS.values())
+# Free-text fields the bot does not interpret; anything beyond one line could
+# hide an instruction, which belongs in Additional Notes instead.
+SINGLE_LINE_HEADINGS = {"game name", "amiberry version tested", "whdload archive filename", "sha1 hash"}
 PORT_NAMES = {"joystick": "joy", "mouse": "mouse", "cd32 pad": "cd32"}
 # Exact chipset options (lower-cased), current form and the first one.
 CHIPSET_OPTIONS = {"aga": "aga", "cd32": "cd32", "cd32 (aga with cd32 pads in both ports)": "cd32"}
@@ -292,9 +295,11 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
     subpath, filename = entry["subpath"], entry["filename"]
     archive = archive_key(entry, games)
 
-    for heading in form:
+    for heading, value in form.items():
         if heading not in KNOWN_HEADINGS:
             problems.append(f"Unrecognised section `{heading}`; this has to be handled by hand.")
+        elif heading in SINGLE_LINE_HEADINGS and "\n" in value.strip():
+            problems.append(f"`{heading.capitalize()}` must be a single line; put anything else in Additional Notes.")
 
     chipset = field(form, "chipset").lower()
     current_ports = effective_ports(entry, settings)
