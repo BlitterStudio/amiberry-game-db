@@ -57,27 +57,40 @@ approval_lost() {  # print why the accepted request no longer stands ("closed" i
   fi
 }
 
-publish() {  # $1 = commit, $2 = file with the database changes (may be empty)
-  local close=1
+publish() {  # $1 = pushed commit, $2 = file with the database changes (may be empty)
+  # The commit is on main, so the sync always runs. Commenting and closing
+  # depend on the request still being the one that was accepted.
+  local close=1 lost
   [ -s "$WORK/notes.md" ] && close=0
+  lost=$(approval_lost)
+  if dry; then
+    echo "--- would run sync.yml"
+  else
+    retry gh workflow run sync.yml -R "$REPO" --ref main
+  fi
+
+  if [ "$lost" = closed ]; then
+    echo "applied in $1; the issue is closed, so no comment"
+    return
+  fi
   {
     echo "Applied in $1 (accepted by @$ACTOR). The sync workflow publishes it to \`whdload_db.json\` in a few minutes; Amiberry users get it from **Update WHDBooter files** and in the next release."
     if [ -s "$2" ]; then echo; echo "### Database changes"; echo; cat "$2"; fi
-    if [ "$close" = 0 ]; then
+    if [ -n "$lost" ]; then
+      echo
+      echo "This applied the request as it read when it was accepted, but $lost, so the issue stays open. Check the bot comment for the current request and add the \`accepted\` label again if more is needed."
+    elif [ "$close" = 0 ]; then
       echo
       echo "This request has Additional Notes, which the bot does not act on, so the issue stays open. Close it once nothing else is needed."
     fi
   } > "$WORK/msg.md"
-
-  if dry; then
-    say "$WORK/msg.md"
-    echo "--- would run sync.yml$([ "$close" = 1 ] && echo " and close #$ISSUE")"
-    return
-  fi
-  retry gh workflow run sync.yml -R "$REPO" --ref main
   say "$WORK/msg.md"
-  if [ "$close" = 1 ]; then
-    retry gh issue close "$ISSUE" -R "$REPO" --reason completed
+
+  if [ -n "$lost" ]; then
+    drop_label
+  elif [ "$close" = 1 ]; then
+    if dry; then echo "--- would close #$ISSUE"; else
+      retry gh issue close "$ISSUE" -R "$REPO" --reason completed; fi
   fi
 }
 
@@ -118,18 +131,6 @@ for attempt in 1 2 3 4 5; do
     # instead of refusing.
     previous=$(git log -1 --format=%h --grep="^Request: $request_hash\$" HEAD)
     if [ -n "$previous" ] && [ "$(git log -1 --format=%s "$previous")" = "$APPLY_SUBJECT" ]; then
-      lost=$(approval_lost)
-      if [ "$lost" = closed ]; then
-        echo "already applied in $previous, and the issue is closed; nothing to do"
-        exit 0
-      elif [ -n "$lost" ]; then
-        # shellcheck disable=SC2016  # literal backticks for Markdown
-        printf 'The accepted request was applied in %s, but %s, so it was not closed. Check the bot comment for the current request and add the `accepted` label again if more is needed.\n' \
-          "$previous" "$lost" > "$WORK/msg.md"
-        say "$WORK/msg.md"
-        drop_label
-        exit 0
-      fi
       echo "already applied in $previous; finishing publication"
       : > "$WORK/diff.md"
       publish "$previous" "$WORK/diff.md"
