@@ -47,7 +47,6 @@ To find a game's subpath, look at the "Game folder" line in the triage bot's com
 | File | Effect |
 |---|---|
 | `Chipset_AGA.txt` | Set chipset to AGA. |
-| `Chipset_FastCopper.txt` | Set fast copper (Amiberry currently ignores this). |
 | `Chipset_ForceNTSC.txt` | Force NTSC video mode. |
 | `Chipset_ImmediateBlitter.txt` | Set blitter mode to immediate. |
 | `Control_CD32.txt` | Set CD32 game pad on both port 0 and port 1. |
@@ -87,6 +86,8 @@ To find a game's subpath, look at the "Game folder" line in the triage bot's com
 | `Screen_Width_640.txt` | Force screen width to 640 (default is 720). |
 | `Screen_Width_704.txt` | Force screen width to 704 (default is 720). |
 | `WHD_Libraries.txt` | Indicate the game requires external WHDLoad libraries. |
+
+Horace's XML also has `Chipset_FastCopper.txt` (`FAST_COPPER`). Only Amiberry-Lite uses it, and Lite reads Horace's XML directly, so `whdload_db.json` never carries `fast_copper`: the converter drops it and the schema rejects it.
 
 ### Value Files (`key value`)
 

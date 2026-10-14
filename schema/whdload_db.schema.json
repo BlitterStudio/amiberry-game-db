@@ -103,9 +103,11 @@
         "ntsc": { "type": "boolean" },
         "fast_ram": { "type": "integer" },
         "z3_ram": { "type": "integer" },
-        "chip_ram": { "type": "integer" }
+        "chip_ram": { "type": "integer" },
+        "fast_copper": false
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "$comment": "fast_copper is used only by Amiberry-Lite, which reads the upstream XML; it is never published here."
     }
   }
 }
