@@ -227,6 +227,8 @@ KNOWN_HEADINGS = {
     "custom controller mappings", "additional notes", "primary control", "additional settings",
 }
 PORT_NAMES = {"joystick": "joy", "mouse": "mouse", "cd32 pad": "cd32"}
+# Exact chipset options (lower-cased), current form and the first one.
+CHIPSET_OPTIONS = {"aga": "aga", "cd32": "cd32", "cd32 (aga with cd32 pads in both ports)": "cd32"}
 
 
 def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: list[dict]) -> list[str]:
@@ -246,9 +248,9 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
     chipset = field(form, "chipset").lower()
     current_ports = effective_ports(entry, settings)
     wanted_ports = list(current_ports)
-    if chipset.startswith("aga") or chipset.startswith("cd32"):
+    if chipset in CHIPSET_OPTIONS:
         settings.add("Chipset_AGA.txt", subpath)
-        if chipset.startswith("cd32"):
+        if CHIPSET_OPTIONS[chipset] == "cd32":
             wanted_ports = ["cd32", "cd32"]
     elif chipset:
         problems.append(f"Unsupported chipset `{chipset}` (supported: AGA, CD32).")
