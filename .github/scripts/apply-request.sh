@@ -38,9 +38,14 @@ say() {
     retry gh issue comment "$ISSUE" -R "$REPO" --body-file "$1"; fi
 }
 
-drop_label() {
-  if dry; then echo "--- would remove label accepted"; else
-    gh issue edit "$ISSUE" -R "$REPO" --remove-label accepted || true; fi
+drop_label() {  # remove `accepted` if present; fail the run if GitHub keeps refusing
+  if dry; then echo "--- would remove label accepted"; return; fi
+  local present
+  present=$(retry gh issue view "$ISSUE" -R "$REPO" --json labels \
+              --jq '[.labels[].name] | index("accepted") != null')
+  if [ "$present" = true ]; then
+    retry gh issue edit "$ISSUE" -R "$REPO" --remove-label accepted > /dev/null
+  fi
 }
 
 current_body() { gh issue view "$ISSUE" -R "$REPO" --json body --jq .body; }
@@ -147,8 +152,8 @@ for attempt in 1 2 3 4 5; do
   fi
   if [ "$status" -eq 4 ] || [ "$status" -eq 5 ]; then
     { cat "$WORK/triage.md"; echo; echo "The \`accepted\` label was removed. Fix the request or the database, then add it again."; } > "$WORK/msg.md"
-    say "$WORK/msg.md"
     drop_label
+    say "$WORK/msg.md"
     exit 0
   elif [ "$status" -ne 0 ]; then
     exit "$status"
@@ -158,8 +163,8 @@ for attempt in 1 2 3 4 5; do
   if ! python3 converter/check_overrides.py "$WORK/new.json" --schema schema/whdload_db.schema.json \
        --report "$WORK/check.md" > /dev/null; then
     { echo "Not applied: the checks failed with these changes."; echo; sed '/^<details>/,$d' "$WORK/check.md"; } > "$WORK/msg.md"
-    say "$WORK/msg.md"
     drop_label
+    say "$WORK/msg.md"
     git checkout -q -- builder
     git clean -qfd builder
     exit 1
@@ -173,8 +178,8 @@ for attempt in 1 2 3 4 5; do
     if [ "$lost" != closed ]; then
       # shellcheck disable=SC2016  # literal backticks for Markdown
       printf 'Not applied: %s. Check the bot comment for the current request and add the `accepted` label again.\n' "$lost" > "$WORK/msg.md"
-      say "$WORK/msg.md"
       drop_label
+      say "$WORK/msg.md"
     fi
     echo "not applied: $lost"
     git checkout -q -- builder
