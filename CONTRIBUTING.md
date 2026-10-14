@@ -19,7 +19,7 @@ Do not edit `whdload_db.json` directly. CI rejects pull requests that touch it. 
 Use the [Game Settings Update](https://github.com/BlitterStudio/amiberry-game-db/issues/new?template=game-settings.yml) issue template.
 
 - Fill in the game name, archive filename (without `.lha`), and SHA1 hash.
-- Get the SHA1 with `sha1sum <archive>.lha` (Linux), `shasum -a 1 <archive>.lha` (macOS) or `Get-FileHash -Algorithm SHA1 <archive>.lha` (Windows). Amiberry's log only shows it when the archive is already in the database.
+- Get the SHA1 with `sha1sum <archive>.lha` (Linux), `shasum -a 1 <archive>.lha` (macOS) or `Get-FileHash -Algorithm SHA1 <archive>.lha` (Windows). Amiberry versions after 8.4.1 also log it when booting a WHDLoad archive, as `WHDBooter - Archive SHA1: ...`; 8.4.1 and earlier only log it when the archive is already in the database.
 - Only fill in fields that need to change. Leave unchanged fields at default.
 - Submit one issue per archive.
 
@@ -101,11 +101,11 @@ Lines in these files contain two tokens separated by whitespace: `<key> <value>`
 
 An archive key is the archive filename without `.lha`. Some filenames belong to more than one archive (different SHA1s); use the archive's SHA1 as the key to target only one of them. A SHA1 key wins over a filename key, and the triage bot picks the SHA1 key automatically when the filename is shared.
 
-### Builder-Only Files
+### Name Generation
 
 | File | Format | Description |
 |---|---|---|
-| `WHD_Longname_Fixes.txt` | `generated name\|fixed name` | Name overrides used only by the self-hosted LHA scanner (`builder/build_db.py`). Upstream XML provides names during normal sync. |
+| `WHD_Longname_Fixes.txt` | `generated name\|fixed name` | Corrections for names generated from a subpath, applied by `builder/make_snippet.py` and `builder/build_db.py`. Names of games in the upstream XML come from upstream and are not changed by the sync. Use `make_snippet.py --name` for a one-off name. |
 
 ### Exclusive Groups
 
@@ -145,9 +145,20 @@ Rules:
 
 ## Adding Missing Games (Snippets)
 
-If an archive is missing from the database, add a snippet file under `builder/snippets/`.
+If an archive is missing from the database, add a snippet file under `builder/snippets/`. Generate it from the archive itself:
 
-Snippet files contain one or more bare `<game>` XML elements matching upstream format:
+```bash
+pip install -r builder/requirements.txt
+python3 builder/make_snippet.py /path/to/Game_v1.0.lha [More_v1.0.lha ...]
+```
+
+This writes `builder/snippets/<archive name>` with the archive's SHA1, subpath, slaves, data paths, custom fields, default slave and variant UUID. It generates the display name from the subpath the same way the upstream builder does; pass `--name "Display Name"` to set it yourself, or `--stdout` to print instead of writing. Settings for the game (screen, ports, CPU and so on) go in `builder/settings` as usual.
+
+Checked against 18 archives that are already in the database: the generated entries match the upstream ones exactly, except that `make_snippet.py` also records `cpu: 68020` when a slave header requires it.
+
+The conversion report (`--report`, and the job summary in CI) lists each snippet as "added" or as replacing an upstream entry, with the fields that differ.
+
+Snippet files contain one or more bare `<game>` XML elements in the upstream format:
 
 ```xml
 <game filename="DevilsTemple_v3.0_1222" sha1="1ded50d02c3ec51467f30f21fea3019edab00b5d">
@@ -174,7 +185,7 @@ Snippet files contain one or more bare `<game>` XML elements matching upstream f
 </game>
 ```
 
-See `builder/snippets/DevilsTemple` for a reference file.
+`builder/snippets/DevilsTemple` is a hand-written example. Escape `&`, `<` and `>` in names (`make_snippet.py` does this); a malformed snippet stops the build with the file name and line.
 
 Snippets are matched by SHA1. The converter adds new entries or replaces matching entries from upstream, then applies all settings and custom controls on top.
 
@@ -242,7 +253,7 @@ For issues with the `game-update` label (the issue form adds it):
   - Anything it could not map to a settings file, under "Needs a maintainer".
 - If an older open issue targets the same archive, the bot adds the `duplicate` label (see Duplicate Rules). After every issue event it also re-checks the other open requests, so labels stay in step when issues close or change.
 - To re-check an older issue, add the `game-update` label or run the "Triage Game Settings Request" workflow manually with the issue number.
-- If the archive is not in the database, the comment says so. Add a snippet first (see Adding Missing Games), then re-run the triage.
+- If the archive is not in the database, the comment says so. Add a snippet first (see Adding Missing Games). Once that PR is merged and the sync has run, re-run the triage; the bot reads the published `whdload_db.json`.
 - Some requests cannot be expressed with the settings files (for example Amiberry options the booter does not set). Reply on the issue rather than approximating; supporting them needs a change to `converter/overrides.py` and to Amiberry.
 
 ### Applying an Issue

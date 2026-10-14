@@ -22,6 +22,7 @@ from pathlib import Path
 import lhafile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "converter"))
+from names import make_full_name  # noqa: E402
 from overrides import Settings, apply_overrides  # noqa: E402
 from xml_to_json import load_snippets  # noqa: E402
 
@@ -251,28 +252,9 @@ def detected_hardware(slaves: list[dict]) -> dict:
 # Main builder
 # ============================================================================
 
-def make_game_name(subpath: str, settings: Settings) -> str:
-    """Convert subpath like 'TurricanII' to friendly name 'Turrican II'.
-
-    WHD_Longname_Fixes.txt lines are "generated name|fixed name", applied in
-    order like Horace's builder.
-    """
-    import re
-    # Insert spaces before capitals that follow lowercase
-    name = re.sub(r"([a-z])([A-Z])", r"\1 \2", subpath)
-    # Insert spaces before numbers that follow letters
-    name = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", name)
-    # Insert spaces after numbers that precede letters
-    name = re.sub(r"(\d)([a-zA-Z])", r"\1 \2", name)
-    for line in settings.lines("WHD_Longname_Fixes.txt"):
-        find, sep, replace = line.partition("|")
-        if sep and name == find:
-            name = replace
-    return name
-
-
 def build_database(scan_dir: str, builder_dir: str, existing_db: str | None = None, full_refresh: bool = False) -> dict:
     settings = Settings(builder_dir)
+    longname_fixes = settings.lines("WHD_Longname_Fixes.txt")
 
     # Load existing database for incremental mode
     existing_sha1s: set[str] = set()
@@ -340,7 +322,7 @@ def build_database(scan_dir: str, builder_dir: str, existing_db: str | None = No
         new_entries.append({
             "filename": filename_no_ext,
             "sha1": archive_sha1,
-            "name": make_game_name(subpath, settings),
+            "name": make_full_name(subpath, longname_fixes),
             "subpath": subpath,
             "variant_uuid": scan_result["variant_uuid"],
             "slave_count": len(scan_result["slaves"]),

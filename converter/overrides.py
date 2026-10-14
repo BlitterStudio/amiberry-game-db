@@ -61,7 +61,7 @@ VALUE_FILES = {
     "WHD_DataPath.txt": "archive",
 }
 
-# Read by the LHA builder only (names come from upstream when converting XML).
+# Read when generating names (make_snippet.py, build_db.py); the XML sync keeps upstream names.
 BUILDER_ONLY_FILES = ("WHD_Longname_Fixes.txt",)
 
 # A game may appear in at most one file of each group.
