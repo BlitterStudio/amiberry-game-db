@@ -28,6 +28,8 @@ from overrides import (BUILDER_ONLY_FILES, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS
 
 CONTROL_LINE = re.compile(r"^joyport[0-3]_amiberry_custom_(axis_)?(none|hotkey)_[a-z0-9_]+=.+$")
 OFFSET_BOUNDS = {"Screen_Offset_H.txt": OFFSET_H_RANGE, "Screen_Offset_V.txt": OFFSET_V_RANGE}
+# Archive-keyed files that also accept `archive/slave` keys (see Settings.datapath).
+SLAVE_KEY_FILES = {"WHD_DataPath.txt"}
 
 
 def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
@@ -88,6 +90,9 @@ def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
                 continue
 
             archive, _, slave = key.partition("/")
+            if slave and name not in SLAVE_KEY_FILES:
+                errors.append(f"settings/{name}: `{key}` cannot name a slave; use the archive filename or SHA1")
+                continue
             by_sha1 = SHA1_KEY.fullmatch(archive) is not None
             matches = [g for g in games if g["sha1"] == archive] if by_sha1 else by_filename.get(archive, [])
             if not by_sha1:
