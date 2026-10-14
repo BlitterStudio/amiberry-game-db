@@ -15,9 +15,12 @@ permissions:
   issues: write
 
 concurrency:
-  # One triage at a time: a run can update other issues' labels.
-  group: triage
-  cancel-in-progress: false
+  # Per issue: a shared group keeps only one pending run and would drop the
+  # rest when several issues change at once. Runs for different issues may
+  # touch each other's duplicate label; both compute it from the same open
+  # issue list, so the result is the same whichever finishes last.
+  group: triage-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: true
 
 jobs:
   triage:
