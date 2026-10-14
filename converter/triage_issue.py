@@ -425,6 +425,20 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
     return "\n".join(out) + "\n", bool(older), settings
 
 
+def duplicate_numbers(issues: list[dict]) -> list[int]:
+    """Open requests that have an older open request for the same archive."""
+    result = []
+    for issue in issues:
+        form = parse_form(issue.get("body", ""))
+        filename = field(form, "whdload archive filename")
+        if not filename:
+            continue
+        older, _, _ = related_issues(issue["number"], filename, field(form, "sha1 hash").lower(), None, [], issues)
+        if older:
+            result.append(issue["number"])
+    return sorted(result)
+
+
 def gh_json(*args: str):
     return json.loads(subprocess.run(["gh", *args], check=True, capture_output=True, text=True,
                                      encoding="utf-8").stdout)
@@ -432,7 +446,10 @@ def gh_json(*args: str):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--issue", type=int, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--issue", type=int)
+    mode.add_argument("--list-duplicates", action="store_true",
+                      help="print the open requests that should carry the duplicate label, one per line")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "BlitterStudio/amiberry-game-db"))
     parser.add_argument("--db", default=os.path.join(REPO_ROOT, "whdload_db.json"))
     parser.add_argument("--builder-dir", default=DEFAULT_BUILDER_DIR)
@@ -440,12 +457,15 @@ def main() -> None:
     parser.add_argument("--output", help="also write the comment to this file")
     args = parser.parse_args()
 
+    others = gh_json("issue", "list", "-R", args.repo, "--state", "open", "--label", "game-update",
+                     "--limit", "500", "--json", "number,body")
+    if args.list_duplicates:
+        print("\n".join(str(n) for n in duplicate_numbers(others)))
+        return
+
     with open(args.db, encoding="utf-8") as f:
         games = json.load(f)["games"]
     issue = gh_json("issue", "view", str(args.issue), "-R", args.repo, "--json", "number,body")
-    others = gh_json("issue", "list", "-R", args.repo, "--state", "open", "--label", "game-update",
-                     "--limit", "500", "--json", "number,body")
-
     comment, duplicate, settings = triage(issue, others, games, args.builder_dir)
     sys.stdout.reconfigure(encoding="utf-8")
     print(comment, end="")

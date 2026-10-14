@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Triage the issue and re-check flagged duplicates
+      - name: Triage the issue and sync duplicate labels
         run: |
           set -euo pipefail
 
@@ -79,11 +79,14 @@ jobs:
             triage_one "$ISSUE"
           fi
 
-          # Opening, editing, reopening or closing a request can change which
-          # other open requests are duplicates, so re-check the flagged ones.
+          # Opening, editing, reopening or closing a request can make other
+          # open requests duplicates or clear them. Re-triage every request
+          # whose duplicate label does not match its current status.
           if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
-            for n in $(gh issue list -R "$GITHUB_REPOSITORY" --state open --label game-update --label duplicate \
-                         --limit 200 --json number --jq '.[].number'); do
+            python3 converter/triage_issue.py --list-duplicates | sort > /tmp/should
+            gh issue list -R "$GITHUB_REPOSITORY" --state open --label game-update --label duplicate \
+              --limit 500 --json number --jq '.[].number' | sort > /tmp/labelled
+            for n in $(comm -3 /tmp/should /tmp/labelled | tr -d '\t'); do
               if [ "$n" != "$ISSUE" ]; then
                 triage_one "$n"
               fi
