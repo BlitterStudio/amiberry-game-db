@@ -331,8 +331,9 @@ def hardware_table(before: dict, after: dict) -> list[str]:
 
 
 def related_issues(number: int, filename: str, sha1: str, entry: dict | None, games: list[dict],
-                   others: list[dict]) -> tuple[list[str], list[str]]:
-    same_archive, same_game = [], []
+                   others: list[dict]) -> tuple[list[str], list[str], list[str]]:
+    """Other open requests: (older, same archive), (newer, same archive), (same game)."""
+    older, newer, same_game = [], [], []
     for issue in others:
         if issue["number"] == number:
             continue
@@ -347,13 +348,13 @@ def related_issues(number: int, filename: str, sha1: str, entry: dict | None, ga
         else:
             same = bool(other_file) and other_file == filename
         if same:
-            same_archive.append(ref)
+            (older if issue["number"] < number else newer).append(ref)
             continue
         if entry:
             other, _ = find_entry(games, other_file, other_sha1)
             if other and other["subpath"] == entry["subpath"]:
                 same_game.append(ref)
-    return same_archive, same_game
+    return older, newer, same_game
 
 
 def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str) -> tuple[str, bool, EditableSettings | None]:
@@ -367,10 +368,14 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
                 "so there is nothing to check automatically."]
         return "\n".join(out) + "\n", False, None
 
-    same_archive, same_game = related_issues(issue["number"], filename, sha1, entry, games, others)
-    if same_archive:
-        out += [f"**Possible duplicate:** {', '.join(same_archive)} request(s) for the same archive. "
+    # Only the newer request of a pair is the duplicate; the oldest one stays open.
+    older, newer, same_game = related_issues(issue["number"], filename, sha1, entry, games, others)
+    if older:
+        verb = "asks" if len(older) == 1 else "ask"
+        out += [f"**Possible duplicate:** {', '.join(older)} already {verb} about this archive. "
                 "Please add your findings there instead.", ""]
+    if newer:
+        out += [f"**Same archive:** later request(s) {', '.join(newer)}.", ""]
     if same_game:
         out += [f"**Related:** {', '.join(same_game)} change(s) the same game (other versions).", ""]
 
@@ -381,7 +386,7 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
         out += [f"`{filename}` {('(' + sha1 + ') ') if sha1 else ''}is not in the database. "
                 "A maintainer needs to add it as a snippet in `builder/snippets/` "
                 "(see CONTRIBUTING.md); the settings can then be applied.", ""]
-        return "\n".join(out) + "\n", bool(same_archive), None
+        return "\n".join(out) + "\n", bool(older), None
 
     settings = EditableSettings(builder_dir)
     hardware = entry.get("hardware", {})
@@ -417,7 +422,7 @@ def triage(issue: dict, others: list[dict], games: list[dict], builder_dir: str)
 
     out += ["Maintainers: `python3 converter/triage_issue.py --issue "
             f"{issue['number']} --apply` writes these changes; open a PR with `Fixes #{issue['number']}`."]
-    return "\n".join(out) + "\n", bool(same_archive), settings
+    return "\n".join(out) + "\n", bool(older), settings
 
 
 def gh_json(*args: str):

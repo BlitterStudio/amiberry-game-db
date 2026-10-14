@@ -148,8 +148,13 @@ class Settings:
         return self.archive_value("WHD_DefaultSlave.txt", entry)
 
     def datapath(self, entry: dict, slave: str) -> str:
-        return (self.archive_value("WHD_DataPath.txt", entry, f"/{slave}")
-                or self.archive_value("WHD_DataPath.txt", entry))
+        """SHA1 keys beat filename keys; within each, `/slave` beats archive-wide."""
+        sha1, filename = entry.get("sha1", ""), entry.get("filename", "")
+        for key in (f"{sha1}/{slave}", sha1, f"{filename}/{slave}", filename):
+            value = self.value("WHD_DataPath.txt", key)
+            if value:
+                return value
+        return ""
 
 
 def _offset(raw: str, bounds: tuple[int, int]) -> int | None:

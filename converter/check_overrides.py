@@ -91,8 +91,11 @@ def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
             by_sha1 = SHA1_KEY.fullmatch(archive) is not None
             matches = [g for g in games if g["sha1"] == archive] if by_sha1 else by_filename.get(archive, [])
             if not by_sha1:
-                # Archives that have their own SHA1-keyed line ignore this one.
-                matches = [g for g in matches if not settings.value(name, g["sha1"] + (f"/{slave}" if slave else ""))]
+                # A SHA1-keyed line for the same archive overrides a filename
+                # line: the archive-wide one always, the /slave one for that slave.
+                matches = [g for g in matches
+                           if not settings.value(name, g["sha1"])
+                           and not (slave and settings.value(name, f"{g['sha1']}/{slave}"))]
             if not matches:
                 if by_sha1 or archive not in by_filename:
                     warnings.append(f"settings/{name}: no archive {'with SHA1' if by_sha1 else 'named'} `{archive}`")

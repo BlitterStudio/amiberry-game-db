@@ -2,7 +2,7 @@ name: Triage Game Settings Request
 
 on:
   issues:
-    types: [opened, edited, reopened, labeled]
+    types: [opened, edited, reopened, labeled, closed]
   workflow_dispatch:
     inputs:
       issue:
@@ -15,8 +15,9 @@ permissions:
   issues: write
 
 concurrency:
-  group: triage-${{ github.event.issue.number || inputs.issue }}
-  cancel-in-progress: true
+  # One triage at a time: a run can update other issues' labels.
+  group: triage
+  cancel-in-progress: false
 
 jobs:
   triage:
@@ -28,6 +29,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       ISSUE: ${{ github.event.issue.number || inputs.issue }}
+      ACTION: ${{ github.event.action }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -37,40 +39,53 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Check request against the database
-        id: triage
+      - name: Triage the issue and re-check flagged duplicates
         run: |
-          status=0
-          python3 converter/triage_issue.py --issue "$ISSUE" --output /tmp/comment.md || status=$?
-          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
-            exit "$status"
-          fi
-          echo "duplicate=$([ "$status" -eq 3 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
 
-      - name: Post or update the bot comment
-        run: |
-          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" --paginate \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- game-db-triage -->"))) | .id' | head -n 1)
-          if [ -n "$comment_id" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F body=@/tmp/comment.md > /dev/null
-          else
-            gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
+          triage_one() {
+            local n=$1 status=0
+            python3 converter/triage_issue.py --issue "$n" --output /tmp/comment.md || status=$?
+            if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
+              return "$status"
+            fi
+
+            local comment_id
+            comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$n/comments" --paginate \
+              --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- game-db-triage -->"))) | .id' | head -n 1)
+            if [ -n "$comment_id" ]; then
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F body=@/tmp/comment.md > /dev/null
+            else
+              gh issue comment "$n" -R "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
+            fi
+
+            if [ "$status" -eq 3 ]; then
+              gh issue edit "$n" -R "$GITHUB_REPOSITORY" --add-label duplicate
+              return 0
+            fi
+            # Only take the label off when this workflow put it there; a
+            # maintainer's manual duplicate label stays.
+            local last_actor has_label
+            last_actor=$(gh api "repos/$GITHUB_REPOSITORY/issues/$n/events" --paginate \
+              --jq '.[] | select(.event == "labeled" and .label.name == "duplicate") | .actor.login' | tail -n 1)
+            has_label=$(gh issue view "$n" -R "$GITHUB_REPOSITORY" --json labels \
+              --jq '[.labels[].name] | index("duplicate") != null')
+            if [ "$has_label" = "true" ] && [ "$last_actor" = "github-actions[bot]" ]; then
+              gh issue edit "$n" -R "$GITHUB_REPOSITORY" --remove-label duplicate
+            fi
+          }
+
+          if [ "$ACTION" != "closed" ]; then
+            triage_one "$ISSUE"
           fi
 
-      - name: Sync the duplicate label
-        env:
-          DUPLICATE: ${{ steps.triage.outputs.duplicate }}
-        run: |
-          if [ "$DUPLICATE" = "true" ]; then
-            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label duplicate
-            exit 0
-          fi
-          # Only take the label off when this workflow put it there; a
-          # maintainer's manual duplicate label stays.
-          last_actor=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/events" --paginate \
-            --jq '.[] | select(.event == "labeled" and .label.name == "duplicate") | .actor.login' | tail -n 1)
-          has_label=$(gh issue view "$ISSUE" -R "$GITHUB_REPOSITORY" --json labels \
-            --jq '[.labels[].name] | index("duplicate") != null')
-          if [ "$has_label" = "true" ] && [ "$last_actor" = "github-actions[bot]" ]; then
-            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --remove-label duplicate
+          # Opening, editing, reopening or closing a request can change which
+          # other open requests are duplicates, so re-check the flagged ones.
+          if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
+            for n in $(gh issue list -R "$GITHUB_REPOSITORY" --state open --label game-update --label duplicate \
+                         --limit 200 --json number --jq '.[].number'); do
+              if [ "$n" != "$ISSUE" ]; then
+                triage_one "$n"
+              fi
+            done
           fi

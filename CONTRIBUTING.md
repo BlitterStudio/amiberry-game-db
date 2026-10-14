@@ -178,7 +178,7 @@ Snippets are matched by SHA1. The converter adds new entries or replaces matchin
 
 ## Duplicate Rules
 
-- **Issues**: One issue per archive. If an open issue already targets the same archive, the triage bot flags it with the `duplicate` label.
+- **Issues**: One issue per archive. Requests are the same archive when their SHA1s match; the filename is compared only when a request has no SHA1. The bot labels the newer request `duplicate` and points it to the older one. It removes a label it added once the older request is closed or either request changes archive; a `duplicate` label added by a maintainer stays.
 - **Settings files**: One entry per game subpath or filename per file. Duplicate lines fail lint checks.
 - **Exclusive groups**: A game cannot appear in multiple files of an exclusive group.
 - **Database output**: Every entry must have a unique SHA1. The converter keeps the last entry if duplicate SHA1s appear in input data, and lint checks fail if duplicates remain.
@@ -235,7 +235,7 @@ When an issue is opened with the `game-update` label:
   - Proposed file edits in `builder/settings/` and `builder/customcontrols/`.
   - Resulting hardware configuration.
   - Other archives sharing the same subpath that will be affected.
-- If another open issue targets the same archive, the bot adds the `duplicate` label.
+- If an older open issue targets the same archive, the bot adds the `duplicate` label (see Duplicate Rules).
 
 ### Applying an Issue
 
