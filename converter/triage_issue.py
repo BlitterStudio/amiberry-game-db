@@ -54,17 +54,37 @@ PORT_FILES = ["Control_CD32.txt", "Control_Port0_Mouse.txt", "Control_Port0_CD32
 # Issue parsing
 # ---------------------------------------------------------------------------
 
-def parse_form(body: str) -> dict[str, str]:
-    """Issue-form body -> {normalised heading: raw value}."""
-    sections: dict[str, str] = {}
-    for block in re.split(r"^### ", body or "", flags=re.M)[1:]:
+def form_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
+    """(text before the first heading, [(normalised heading, value), ...] in order)."""
+    blocks = re.split(r"^### ", body or "", flags=re.M)
+    sections = []
+    for block in blocks[1:]:
         heading, _, value = block.partition("\n")
         key = re.sub(r"\s*\((all versions|this archive|if non-default)\)", "", heading.strip()).lower()
         key = re.sub(r"\s*/.*$", "", key)  # "port 0 / mouse port" -> "port 0"
         value = value.strip()
         fenced = re.fullmatch(r"```\w*\n(.*?)\n?```", value, flags=re.S)
-        sections[key] = fenced.group(1).strip() if fenced else value
-    return sections
+        sections.append((key, fenced.group(1).strip() if fenced else value))
+    return blocks[0], sections
+
+
+def parse_form(body: str) -> dict[str, str]:
+    """Issue-form body -> {normalised heading: value}."""
+    return dict(form_sections(body)[1])
+
+
+def form_problems(body: str) -> list[str]:
+    """Parts of the body that parse_form() would drop or overwrite."""
+    preamble, sections = form_sections(body)
+    problems = []
+    if preamble.strip():
+        problems.append("The issue has text before the first form section; this has to be handled by hand.")
+    seen: set[str] = set()
+    for key, _ in sections:
+        if key in seen:
+            problems.append(f"The section `{key}` appears more than once; keep one.")
+        seen.add(key)
+    return problems
 
 
 def field(form: dict[str, str], *names: str) -> str:
@@ -451,7 +471,8 @@ def triage(issue: dict, others: list[dict], games: list[dict],
     settings = EditableSettings(builder_dir)
     hardware = entry.get("hardware", {})
     before = merge_hardware(hardware, settings_hardware(entry["filename"], entry["subpath"], settings))
-    problems = archive_identity_problems(filename, sha1, matched_by, games) + plan(form, entry, settings, games)
+    problems = (form_problems(issue.get("body", "")) + archive_identity_problems(filename, sha1, matched_by, games)
+                + plan(form, entry, settings, games))
     after = merge_hardware(hardware, settings_hardware(entry["filename"], entry["subpath"], settings))
 
     siblings = [g for g in games if g["subpath"] == entry["subpath"]]
