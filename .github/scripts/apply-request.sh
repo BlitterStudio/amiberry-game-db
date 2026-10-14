@@ -3,14 +3,19 @@
 #
 #   apply-request.sh <issue number>
 #
-# Needs: gh (authenticated), python3 with jsonschema, a checkout of main, and
-# the upstream XML at $UPSTREAM_XML.
+# Needs: gh (authenticated), python3 with jsonschema, a checkout of main with
+# full history, and the upstream XML at $UPSTREAM_XML.
+#
+# The run consumes the approval: it removes the `accepted` label as soon as it
+# starts. Adding the label again later is a new approval with its own run, and
+# this run stands down if it sees the label back.
 #
 # ISSUE_BODY_FILE: the issue body as it was when the request was accepted (the
-#   labeled event's payload). The run applies exactly that text and refuses if
-#   the issue was edited, or lost the `accepted` label, before the push.
-#   Without it (manual runs) the current body is used.
-# REQUIRE_LABEL=1: also require the `accepted` label at push time.
+#   labeled event's payload). The run applies exactly that text and stops if
+#   the issue is edited before the push. Without it (manual runs) the current
+#   body is used.
+# REQUIRE_LABEL=1: label-triggered run; stop if the label is already gone
+#   when the run starts (the approval was withdrawn while it was queued).
 # DRY_RUN=1: stop before pushing, commenting or editing the issue, and print
 #   what would happen.
 set -euo pipefail
@@ -21,10 +26,11 @@ ACTOR=${GITHUB_ACTOR:-$(gh api user --jq .login)}
 UPSTREAM_XML=${UPSTREAM_XML:-/tmp/whdload_db.xml}
 WORK=$(mktemp -d)
 APPLY_SUBJECT="Apply settings from #$ISSUE"
+RELABEL="Check the bot comment for the current request and add the \`accepted\` label again if it should be applied."
 
 dry() { [ "${DRY_RUN:-0}" = 1 ]; }
 
-retry() {  # GitHub API calls after the push must not strand a pushed commit
+retry() {  # every GitHub call goes through here; a persistent failure fails the run
   local n
   for n in 1 2 3 4; do
     "$@" && return 0
@@ -35,45 +41,31 @@ retry() {  # GitHub API calls after the push must not strand a pushed commit
 
 say() {
   if dry; then echo "--- comment on #$ISSUE ---"; cat "$1"; else
-    retry gh issue comment "$ISSUE" -R "$REPO" --body-file "$1"; fi
+    retry gh issue comment "$ISSUE" -R "$REPO" --body-file "$1" > /dev/null; fi
 }
 
-drop_label() {  # remove `accepted` if present; fail the run if GitHub keeps refusing
-  if dry; then echo "--- would remove label accepted"; return; fi
-  local present newest
-  present=$(retry gh issue view "$ISSUE" -R "$REPO" --json labels \
-              --jq '[.labels[].name] | index("accepted") != null')
-  [ "$present" = true ] || return 0
-  # Keep the label if someone added it again after this run's approval: that
-  # newer approval has its own run queued behind this one.
-  newest=$(retry gh api --paginate "repos/$REPO/issues/$ISSUE/events" \
-             --jq '.[] | select(.event == "labeled" and .label.name == "accepted") | .created_at' | tail -n 1)
-  if [ -n "$newest" ] && [[ "$newest" > "$APPROVED_AT" ]]; then
-    echo "accepted was added again at $newest; leaving it for that run"
-    return 0
-  fi
-  retry gh issue edit "$ISSUE" -R "$REPO" --remove-label accepted > /dev/null
+label_present() {
+  retry gh issue view "$ISSUE" -R "$REPO" --json labels --jq '[.labels[].name] | index("accepted") != null'
 }
 
 current_body() { gh issue view "$ISSUE" -R "$REPO" --json body --jq .body; }
 
-approval_lost() {  # print why the accepted request no longer stands ("closed" if closed), or nothing
+approval_lost() {
+  # Print why the accepted request no longer stands, or nothing:
+  #   closed      the issue was closed
+  #   superseded  `accepted` was added again: a newer approval has its own run
+  #   anything else is a reason to tell the requester.
   # Fails (non-zero) when GitHub can't be read, so callers stop instead of
-  # mistaking an API error for a closed or edited issue.
+  # mistaking an API error for a change.
   dry && return 0
-  local info duplicates
-  info=$(retry gh issue view "$ISSUE" -R "$REPO" --json state,labels \
-           --jq '.state + " " + ([.labels[].name] | index("accepted") != null | tostring)') || return 1
+  local state labelled duplicates
+  state=$(retry gh issue view "$ISSUE" -R "$REPO" --json state --jq .state) || return 1
+  if [ "$state" != OPEN ]; then echo closed; return 0; fi
+  labelled=$(label_present) || return 1
+  if [ "$labelled" = true ]; then echo superseded; return 0; fi
   retry current_body > "$WORK/current.md" || return 1
-  case "$info" in
-    OPEN\ *) ;;
-    *) echo closed; return 0 ;;
-  esac
   if ! cmp -s "$snapshot" "$WORK/current.md"; then
     echo "the issue was edited after it was accepted"
-    return 0
-  elif [ "${REQUIRE_LABEL:-0}" = 1 ] && [ "$info" != "OPEN true" ]; then
-    echo "the accepted label was removed"
     return 0
   fi
   # Another request may have been opened or reopened for the same archive
@@ -90,11 +82,8 @@ publish() {  # $1 = pushed commit, $2 = file with the database changes (may be e
   local close=1 lost
   [ -s "$WORK/notes.md" ] && close=0
   lost=$(approval_lost)
-  if dry; then
-    echo "--- would run sync.yml"
-  else
-    retry gh workflow run sync.yml -R "$REPO" --ref main
-  fi
+  if dry; then echo "--- would run sync.yml"; else
+    retry gh workflow run sync.yml -R "$REPO" --ref main; fi
 
   if [ "$lost" = closed ]; then
     echo "applied in $1; the issue is closed, so no comment"
@@ -103,9 +92,12 @@ publish() {  # $1 = pushed commit, $2 = file with the database changes (may be e
   {
     echo "Applied in $1 (accepted by @$ACTOR). The sync workflow publishes it to \`whdload_db.json\` in a few minutes; Amiberry users get it from **Update WHDBooter files** and in the next release."
     if [ -s "$2" ]; then echo; echo "### Database changes"; echo; cat "$2"; fi
-    if [ -n "$lost" ]; then
+    if [ "$lost" = superseded ]; then
       echo
-      echo "This applied the request as it read when it was accepted, but $lost, so the issue stays open. Check the bot comment for the current request and add the \`accepted\` label again if more is needed."
+      echo "The request was accepted again while this ran; that newer run handles the current request."
+    elif [ -n "$lost" ]; then
+      echo
+      echo "This applied the request as it read when it was accepted, but $lost, so the issue stays open. $RELABEL"
     elif [ "$close" = 0 ]; then
       echo
       echo "This request has Additional Notes, which the bot does not act on, so the issue stays open. Close it once nothing else is needed."
@@ -113,40 +105,44 @@ publish() {  # $1 = pushed commit, $2 = file with the database changes (may be e
   } > "$WORK/msg.md"
   say "$WORK/msg.md"
 
-  if [ -n "$lost" ]; then
-    drop_label
-  elif [ "$close" = 1 ]; then
-    # The sync dispatch and the comment can take a while with retries; check
-    # again so a request edited in the meantime is not closed as completed.
-    lost=$(approval_lost)
-    if [ -z "$lost" ]; then
-      if dry; then echo "--- would close #$ISSUE"; else
-        retry gh issue close "$ISSUE" -R "$REPO" --reason completed; fi
-    elif [ "$lost" != closed ]; then
-      drop_label
-      # shellcheck disable=SC2016  # literal backticks for Markdown
-      printf 'The issue was not closed: %s while publishing. Check the bot comment for the current request and add the `accepted` label again if more is needed.\n' \
-        "$lost" > "$WORK/msg.md"
-      say "$WORK/msg.md"
-    fi
+  [ -z "$lost" ] && [ "$close" = 1 ] || return 0
+  # The sync dispatch and the comment can take a while with retries; check
+  # again so a request edited in the meantime is not closed as completed.
+  lost=$(approval_lost)
+  if [ -z "$lost" ]; then
+    if dry; then echo "--- would close #$ISSUE"; else
+      retry gh issue close "$ISSUE" -R "$REPO" --reason completed > /dev/null; fi
+  elif [ "$lost" != closed ] && [ "$lost" != superseded ]; then
+    printf 'The issue was not closed: %s while publishing. %s\n' "$lost" "$RELABEL" > "$WORK/msg.md"
+    say "$WORK/msg.md"
   fi
 }
 
-state=$(gh issue view "$ISSUE" -R "$REPO" --json state --jq .state)
+refuse() {  # $1 = file with the reasons; the approval was already consumed
+  { cat "$1"; echo; echo "Fix the request or the database, then add the \`accepted\` label again."; } > "$WORK/msg.md"
+  say "$WORK/msg.md"
+}
+
+state=$(retry gh issue view "$ISSUE" -R "$REPO" --json state --jq .state)
 if [ "$state" != OPEN ]; then
   echo "#$ISSUE is $state; nothing to do"
   exit 0
 fi
 
-# When this run's approval was given: the labeled event's time, or now for a
-# manual run. Labels added after this belong to a newer approval.
-APPROVED_AT=${APPROVED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+# Consume the approval before doing anything else.
+if [ "$(label_present)" = true ]; then
+  if dry; then echo "--- would remove label accepted"; else
+    retry gh issue edit "$ISSUE" -R "$REPO" --remove-label accepted > /dev/null; fi
+elif [ "${REQUIRE_LABEL:-0}" = 1 ]; then
+  echo "the accepted label was removed before this run started; nothing to do"
+  exit 0
+fi
 
 snapshot=$WORK/body.md
 if [ -n "${ISSUE_BODY_FILE:-}" ]; then
   cp "$ISSUE_BODY_FILE" "$snapshot"
 else
-  current_body > "$snapshot"
+  retry current_body > "$snapshot"
 fi
 # Recorded in the commit so a re-run can tell whether that exact request text
 # was already pushed.
@@ -183,9 +179,7 @@ for attempt in 1 2 3 4 5; do
     fi
   fi
   if [ "$status" -eq 4 ] || [ "$status" -eq 5 ]; then
-    { cat "$WORK/triage.md"; echo; echo "Fix the request or the database, then add the \`accepted\` label again."; } > "$WORK/msg.md"
-    drop_label
-    say "$WORK/msg.md"
+    refuse "$WORK/triage.md"
     exit 0
   elif [ "$status" -ne 0 ]; then
     exit "$status"
@@ -194,9 +188,8 @@ for attempt in 1 2 3 4 5; do
   python3 converter/xml_to_json.py "$UPSTREAM_XML" "$WORK/new.json" --report "$WORK/convert.md" > /dev/null
   if ! python3 converter/check_overrides.py "$WORK/new.json" --schema schema/whdload_db.schema.json \
        --report "$WORK/check.md" > /dev/null; then
-    { echo "Not applied: the checks failed with these changes."; echo; sed '/^<details>/,$d' "$WORK/check.md"; } > "$WORK/msg.md"
-    drop_label
-    say "$WORK/msg.md"
+    { echo "Not applied: the checks failed with these changes."; echo; sed '/^<details>/,$d' "$WORK/check.md"; } > "$WORK/reasons.md"
+    refuse "$WORK/reasons.md"
     git checkout -q -- builder
     git clean -qfd builder
     exit 1
@@ -207,10 +200,8 @@ for attempt in 1 2 3 4 5; do
   # that changed while this run was queued or working.
   lost=$(approval_lost)
   if [ -n "$lost" ]; then
-    if [ "$lost" != closed ]; then
-      # shellcheck disable=SC2016  # literal backticks for Markdown
-      printf 'Not applied: %s. Check the bot comment for the current request and add the `accepted` label again.\n' "$lost" > "$WORK/msg.md"
-      drop_label
+    if [ "$lost" != closed ] && [ "$lost" != superseded ]; then
+      printf 'Not applied: %s. %s\n' "$lost" "$RELABEL" > "$WORK/msg.md"
       say "$WORK/msg.md"
     fi
     echo "not applied: $lost"

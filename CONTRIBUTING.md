@@ -262,20 +262,23 @@ For issues with the `game-update` label (the issue form adds it):
 
 Read the bot's comment, then add the `accepted` label. `.github/workflows/apply.yml` (script: `.github/scripts/apply-request.sh`) then:
 
-1. applies the request, exactly as it read when you added the label, to `builder/` with `triage_issue.py --apply --require-clean`;
-2. rebuilds the database from the current upstream XML and runs the same checks as pull requests;
-3. commits to `main` as "Apply settings from #N" (crediting whoever added the label) and starts the sync, which publishes the change;
-4. comments the database entries that changed and closes the issue. If the request has Additional Notes, the issue stays open: the bot does not act on notes, so close it yourself once nothing else is needed.
+1. removes the `accepted` label: each label is one approval, and adding it again later starts a new run;
+2. applies the request, exactly as it read when you added the label, to `builder/` with `triage_issue.py --apply --require-clean`;
+3. rebuilds the database from the current upstream XML and runs the same checks as pull requests;
+4. commits to `main` as "Apply settings from #N" (crediting whoever added the label) and starts the sync, which publishes the change;
+5. comments the database entries that changed and closes the issue. If the request has Additional Notes, the issue stays open: the bot does not act on notes, so close it yourself once nothing else is needed.
 
-It applies nothing, comments why and removes the `accepted` label when:
+It applies nothing and comments why when:
 - the archive is not in the database (add a snippet first);
 - an older open request covers the same archive;
 - the bot listed anything under "Needs a maintainer";
 - the database already has these settings;
 - the checks fail with the changes;
-- the issue was edited, or lost the `accepted` label, between labelling and the push.
+- the issue was edited between labelling and the push.
 
-Fix the cause (or check the edited request), then add the label again. Only people who can label issues (triage access or higher) can trigger this. To re-run it without relabelling, use the "Apply Accepted Request" workflow's **Run workflow** button with the issue number; that applies the issue as it reads at that moment. If a run pushed its commit but failed before commenting or closing, a re-run finishes those steps instead of reporting "nothing to change".
+Closing the issue, or removing the label before the run starts, withdraws the approval without a comment. Adding the label again while a run is going makes that run stand down; the new run handles the request as it reads then.
+
+Fix the cause (or check the edited request), then add the label again. Only people who can label issues (triage access or higher) can trigger this. You can also start it from the "Apply Accepted Request" workflow's **Run workflow** button with the issue number; that applies the issue as it reads at that moment. If a run pushed its commit but failed before commenting or closing, re-running it finishes those steps instead of reporting "nothing to change".
 
 For anything the bot can't apply on its own (hand-edited settings, snippets, partial requests), apply locally on a branch from an up-to-date `main`. The script reads `whdload_db.json`, and reads the issue through an authenticated `gh` CLI:
 

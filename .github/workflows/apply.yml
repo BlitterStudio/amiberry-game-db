@@ -1,10 +1,11 @@
 name: Apply Accepted Request
 
-# A maintainer adds the `accepted` label to a game-update issue. The request is
-# applied to builder/, checked, committed to main and published; the issue is
-# closed with the resulting database changes. Anything that needs a person
-# (not in the database, older duplicate, values the settings cannot express,
-# failed checks) is reported on the issue instead and the label is removed.
+# A maintainer adds the `accepted` label to a game-update issue. The run removes
+# the label (consuming the approval), applies the request to builder/, checks
+# it, commits to main and publishes; the issue is closed with the resulting
+# database changes. Anything that needs a person (not in the database, older
+# duplicate, values the settings cannot express, failed checks) is reported on
+# the issue instead. Adding the label again starts a new run.
 
 on:
   issues:
@@ -64,6 +65,4 @@ jobs:
         env:
           ISSUE_BODY_FILE: ${{ github.event_name == 'issues' && '/tmp/accepted-body.md' || '' }}
           REQUIRE_LABEL: ${{ github.event_name == 'issues' && '1' || '0' }}
-          # When the label was added (the labeled event updates the issue).
-          APPROVED_AT: ${{ github.event.issue.updated_at || '' }}
         run: bash .github/scripts/apply-request.sh "$ISSUE"
