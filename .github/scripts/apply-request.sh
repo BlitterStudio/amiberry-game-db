@@ -45,6 +45,18 @@ drop_label() {
 
 current_body() { gh issue view "$ISSUE" -R "$REPO" --json body --jq .body; }
 
+approval_lost() {  # print why the accepted request no longer stands ("closed" if closed), or nothing
+  dry && return 0
+  if [ "$(gh issue view "$ISSUE" -R "$REPO" --json state --jq .state)" != OPEN ]; then
+    echo closed
+  elif ! current_body | cmp -s "$snapshot" -; then
+    echo "the issue was edited after it was accepted"
+  elif [ "${REQUIRE_LABEL:-0}" = 1 ] && \
+       [ "$(gh issue view "$ISSUE" -R "$REPO" --json labels --jq '[.labels[].name] | index("accepted") != null')" != true ]; then
+    echo "the accepted label was removed"
+  fi
+}
+
 publish() {  # $1 = commit, $2 = file with the database changes (may be empty)
   local close=1
   [ -s "$WORK/notes.md" ] && close=0
@@ -106,6 +118,18 @@ for attempt in 1 2 3 4 5; do
     # instead of refusing.
     previous=$(git log -1 --format=%h --grep="^Request: $request_hash\$" HEAD)
     if [ -n "$previous" ] && [ "$(git log -1 --format=%s "$previous")" = "$APPLY_SUBJECT" ]; then
+      lost=$(approval_lost)
+      if [ "$lost" = closed ]; then
+        echo "already applied in $previous, and the issue is closed; nothing to do"
+        exit 0
+      elif [ -n "$lost" ]; then
+        # shellcheck disable=SC2016  # literal backticks for Markdown
+        printf 'The accepted request was applied in %s, but %s, so it was not closed. Check the bot comment for the current request and add the `accepted` label again if more is needed.\n' \
+          "$previous" "$lost" > "$WORK/msg.md"
+        say "$WORK/msg.md"
+        drop_label
+        exit 0
+      fi
       echo "already applied in $previous; finishing publication"
       : > "$WORK/diff.md"
       publish "$previous" "$WORK/diff.md"
@@ -133,27 +157,20 @@ for attempt in 1 2 3 4 5; do
   fi
   python3 converter/diff_db.py "$WORK/base.json" "$WORK/new.json" > "$WORK/diff.md"
 
-  # The approval covers the text that was accepted. Stop if the request was
-  # edited or un-accepted while this run was queued or working.
-  if ! dry; then
-    current_body > "$WORK/current.md"
-    if ! cmp -s "$snapshot" "$WORK/current.md"; then
-      changed="the issue was edited after it was accepted"
-    elif [ "${REQUIRE_LABEL:-0}" = 1 ] && \
-         [ "$(gh issue view "$ISSUE" -R "$REPO" --json labels --jq '[.labels[].name] | index("accepted") != null')" != true ]; then
-      changed="the \`accepted\` label was removed"
-    else
-      changed=""
-    fi
-    if [ -n "$changed" ]; then
+  # The approval covers the text that was accepted, on an open issue. Stop if
+  # that changed while this run was queued or working.
+  lost=$(approval_lost)
+  if [ -n "$lost" ]; then
+    if [ "$lost" != closed ]; then
       # shellcheck disable=SC2016  # literal backticks for Markdown
-      printf 'Not applied: %s. Check the bot comment for the current request and add the `accepted` label again.\n' "$changed" > "$WORK/msg.md"
+      printf 'Not applied: %s. Check the bot comment for the current request and add the `accepted` label again.\n' "$lost" > "$WORK/msg.md"
       say "$WORK/msg.md"
       drop_label
-      git checkout -q -- builder
-      git clean -qfd builder
-      exit 0
     fi
+    echo "not applied: $lost"
+    git checkout -q -- builder
+    git clean -qfd builder
+    exit 0
   fi
 
   git add builder

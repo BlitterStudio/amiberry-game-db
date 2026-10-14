@@ -84,15 +84,24 @@ def checked(form: dict[str, str], *names: str) -> list[str]:
 # Database lookup (same precedence as Amiberry: SHA1, then last filename match)
 # ---------------------------------------------------------------------------
 
+def request_archive(form: dict[str, str]) -> tuple[str, str]:
+    """(archive filename without .lha, lowercase SHA1) as the request gives them.
+
+    Every comparison of a request's archive goes through here so lookups,
+    ambiguity checks and duplicate detection agree.
+    """
+    filename = field(form, "whdload archive filename")
+    if filename.lower().endswith(".lha"):
+        filename = filename[:-4]
+    return filename, field(form, "sha1 hash").lower()
+
+
 def find_entry(games: list[dict], filename: str, sha1: str) -> tuple[dict | None, str]:
-    sha1 = sha1.lower()
     if sha1:
         for game in games:
             if game["sha1"] == sha1:
                 return game, "SHA1"
     matches = [g for g in games if g["filename"] == filename]
-    if not matches and filename.lower().endswith(".lha"):
-        matches = [g for g in games if g["filename"] == filename[:-4]]
     return (matches[-1], "filename") if matches else (None, "")
 
 
@@ -340,9 +349,7 @@ def related_issues(number: int, filename: str, sha1: str, entry: dict | None, ga
     for issue in others:
         if issue["number"] == number:
             continue
-        form = parse_form(issue.get("body", ""))
-        other_file = field(form, "whdload archive filename")
-        other_sha1 = field(form, "sha1 hash").lower()
+        other_file, other_sha1 = request_archive(parse_form(issue.get("body", "")))
         ref = f"#{issue['number']}"
         # Filenames are shared by different archives; compare them only when
         # either request lacks a usable SHA1.
@@ -377,8 +384,7 @@ def triage(issue: dict, others: list[dict], games: list[dict],
            builder_dir: str) -> tuple[str, bool, EditableSettings | None, list[str]]:
     """Return (comment, has an older duplicate, pending settings or None, problems)."""
     form = parse_form(issue.get("body", ""))
-    filename = field(form, "whdload archive filename")
-    sha1 = field(form, "sha1 hash").lower()
+    filename, sha1 = request_archive(form)
     entry, matched_by = find_entry(games, filename, sha1)
     out = [MARKER, "Automated check of this request against the current database.", ""]
     if not filename:
@@ -464,10 +470,10 @@ def duplicate_numbers(issues: list[dict]) -> list[int]:
     result = []
     for issue in issues:
         form = parse_form(issue.get("body", ""))
-        filename = field(form, "whdload archive filename")
+        filename, sha1 = request_archive(form)
         if not filename:
             continue
-        older, _, _ = related_issues(issue["number"], filename, field(form, "sha1 hash").lower(), None, [], issues)
+        older, _, _ = related_issues(issue["number"], filename, sha1, None, [], issues)
         if older:
             result.append(issue["number"])
     return sorted(result)
