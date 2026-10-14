@@ -81,6 +81,9 @@ if [ -n "${ISSUE_BODY_FILE:-}" ]; then
 else
   current_body > "$snapshot"
 fi
+# Recorded in the commit so a re-run can tell whether that exact request text
+# was already pushed.
+request_hash=$(sha256sum "$snapshot" | cut -d' ' -f1)
 
 pushed=0
 for attempt in 1 2 3 4 5; do
@@ -98,11 +101,11 @@ for attempt in 1 2 3 4 5; do
     --apply --require-clean --notes-output "$WORK/notes.md" --output "$WORK/triage.md" > /dev/null || status=$?
 
   if [ "$status" -eq 5 ]; then
-    # Nothing left to change. If an earlier run already pushed this request
-    # but stopped before publishing, finish that run instead of refusing.
-    # awk reads all of the log (no early exit) so git never gets SIGPIPE under pipefail.
-    previous=$(git log --format='%h%x09%s' HEAD | awk -F'\t' -v s="$APPLY_SUBJECT" '$2 == s && !found { print $1; found = 1 }')
-    if [ -n "$previous" ]; then
+    # Nothing left to change. If an earlier run already pushed this exact
+    # request (same text) but stopped before publishing, finish that run
+    # instead of refusing.
+    previous=$(git log -1 --format=%h --grep="^Request: $request_hash\$" HEAD)
+    if [ -n "$previous" ] && [ "$(git log -1 --format=%s "$previous")" = "$APPLY_SUBJECT" ]; then
       echo "already applied in $previous; finishing publication"
       : > "$WORK/diff.md"
       publish "$previous" "$WORK/diff.md"
@@ -155,7 +158,7 @@ for attempt in 1 2 3 4 5; do
 
   git add builder
   git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" \
-    commit -q -m "$APPLY_SUBJECT" -m "Accepted by @$ACTOR."
+    commit -q -m "$APPLY_SUBJECT" -m "Accepted by @$ACTOR." -m "Request: $request_hash"
   if dry; then
     echo "--- would push:"; git show --stat --format='%s%n%b' HEAD
     pushed=1

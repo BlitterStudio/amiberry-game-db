@@ -360,6 +360,19 @@ def related_issues(number: int, filename: str, sha1: str, entry: dict | None, ga
     return older, newer, same_game
 
 
+def archive_identity_problems(filename: str, sha1: str, matched_by: str, games: list[dict]) -> list[str]:
+    """Reasons the matched entry may not be the requester's archive."""
+    if sha1 and not SHA1_KEY.fullmatch(sha1):
+        return [f"The SHA1 `{sha1}` is not a 40-character hex value; please check it."]
+    if sha1 and matched_by == "filename":
+        return [f"No archive has the SHA1 `{sha1}`; the entry was found by filename only. "
+                "Please check the SHA1 of your .lha file."]
+    if not sha1 and sum(1 for g in games if g["filename"] == filename) > 1:
+        return [f"Several archives are named `{filename}`; add the SHA1 of your .lha file "
+                "so the right one is changed."]
+    return []
+
+
 def triage(issue: dict, others: list[dict], games: list[dict],
            builder_dir: str) -> tuple[str, bool, EditableSettings | None, list[str]]:
     """Return (comment, has an older duplicate, pending settings or None, problems)."""
@@ -384,9 +397,6 @@ def triage(issue: dict, others: list[dict], games: list[dict],
     if same_game:
         out += [f"**Related:** {', '.join(same_game)} change(s) the same game (other versions).", ""]
 
-    if sha1 and not re.fullmatch(r"[0-9a-f]{40}", sha1):
-        out += [f"The SHA1 `{sha1}` is not a 40-character hex value.", ""]
-
     if not entry:
         out += [f"`{filename}` {('(' + sha1 + ') ') if sha1 else ''}is not in the database. "
                 "A maintainer needs to add it as a snippet in `builder/snippets/` "
@@ -396,7 +406,7 @@ def triage(issue: dict, others: list[dict], games: list[dict],
     settings = EditableSettings(builder_dir)
     hardware = entry.get("hardware", {})
     before = merge_hardware(hardware, settings_hardware(entry["filename"], entry["subpath"], settings))
-    problems = plan(form, entry, settings, games)
+    problems = archive_identity_problems(filename, sha1, matched_by, games) + plan(form, entry, settings, games)
     after = merge_hardware(hardware, settings_hardware(entry["filename"], entry["subpath"], settings))
 
     siblings = [g for g in games if g["subpath"] == entry["subpath"]]
@@ -406,9 +416,6 @@ def triage(issue: dict, others: list[dict], games: list[dict],
     out += [f"**Archive:** `{entry['filename']}` (`{entry['sha1']}`), matched by {matched_by}.",
             f"**Game folder:** `{entry['subpath']}`. Settings marked \"all versions\" apply to "
             f"{len(siblings)} archive(s): {', '.join(labels)}.", ""]
-    if matched_by == "filename" and sha1:
-        out += ["The SHA1 given does not match any archive; the entry was found by filename. "
-                "Please check the SHA1 of your .lha file.", ""]
 
     if settings.changes:
         out += ["### Changes needed", ""] + [f"- {c}" for c in settings.changes] + [""]
