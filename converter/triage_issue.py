@@ -29,6 +29,8 @@ from overrides import (CLOCK_SPEEDS, CPU_MODELS, DEFAULT_BUILDER_DIR, EXCLUSIVE_
 MARKER = "<!-- game-db-triage -->"
 REPO_ROOT = os.path.dirname(DEFAULT_BUILDER_DIR)
 EMPTY = {"", "_no response_", "no change", "none", "default", "ocs/ecs (default)"}
+# Values written into "key value" settings lines: one token, no whitespace or line breaks.
+SINGLE_TOKEN = re.compile(r"\S+")
 
 # Checkbox labels (current form and the first version of the form) -> settings file.
 FLAG_LABELS = {
@@ -217,19 +219,39 @@ def archive_key(entry: dict, games: list[dict]) -> str:
     return entry["sha1"] if shared else entry["filename"]
 
 
+# Issue-form headings (normalised by parse_form), current form and the first one.
+KNOWN_HEADINGS = {
+    "game name", "whdload archive filename", "sha1 hash", "amiberry version tested", "chipset", "cpu",
+    "cpu clock speed", "zorro iii ram", "port 0", "port 1", "screen height", "screen width",
+    "horizontal screen offset", "vertical screen offset", "turn on", "default slave", "data path",
+    "custom controller mappings", "additional notes", "primary control", "additional settings",
+}
+PORT_NAMES = {"joystick": "joy", "mouse": "mouse", "cd32 pad": "cd32"}
+
+
 def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: list[dict]) -> list[str]:
-    """Apply the request to `settings`; return problems that need a human."""
+    """Apply the request to `settings`; return problems that need a human.
+
+    Every value the request sets must be understood: anything unrecognised is a
+    problem, so an unattended apply never silently drops part of a request.
+    """
     problems: list[str] = []
     subpath, filename = entry["subpath"], entry["filename"]
     archive = archive_key(entry, games)
+
+    for heading, value in form.items():
+        if heading not in KNOWN_HEADINGS and value.strip().lower() not in EMPTY:
+            problems.append(f"Unrecognised section `{heading}`; this has to be handled by hand.")
 
     chipset = field(form, "chipset").lower()
     current_ports = effective_ports(entry, settings)
     wanted_ports = list(current_ports)
     if chipset.startswith("aga") or chipset.startswith("cd32"):
         settings.add("Chipset_AGA.txt", subpath)
-    if chipset.startswith("cd32"):
-        wanted_ports = ["cd32", "cd32"]
+        if chipset.startswith("cd32"):
+            wanted_ports = ["cd32", "cd32"]
+    elif chipset:
+        problems.append(f"Unsupported chipset `{chipset}` (supported: AGA, CD32).")
 
     cpu = field(form, "cpu")
     if cpu:
@@ -253,14 +275,17 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
         else:
             problems.append(f"Unsupported Z3 RAM size `{z3}`.")
 
-    port_names = {"joystick": "joy", "mouse": "mouse", "cd32 pad": "cd32"}
     for n, heading in enumerate(("port 0", "port 1")):
         value = field(form, heading).lower()
-        if value in port_names:
-            wanted_ports[n] = port_names[value]
+        if value in PORT_NAMES:
+            wanted_ports[n] = PORT_NAMES[value]
+        elif value:
+            problems.append(f"Unsupported {heading} setting `{value}` (supported: Joystick, Mouse, CD32 pad).")
     legacy_control = field(form, "primary control").lower()
     if legacy_control == "mouse":
         wanted_ports[0] = "mouse"
+    elif legacy_control not in ("", "joystick"):
+        problems.append(f"Unsupported primary control `{legacy_control}`.")
     if wanted_ports != current_ports:
         set_ports(settings, subpath, wanted_ports)
         effective = effective_ports(entry, settings)
@@ -300,10 +325,12 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
             settings.add(FLAG_LABELS[label], subpath)
         elif label == "cpu compatible mode":
             problems.append("\"CPU compatible mode\" is ambiguous (it is on by default); say whether it should be turned off.")
+        else:
+            problems.append(f"Unrecognised option `{label}`.")
 
     slave = field(form, "default slave")
     if slave:
-        resolved = resolve_slave(slave, entry.get("slaves", []))
+        resolved = resolve_slave(slave, entry.get("slaves", [])) if SINGLE_TOKEN.fullmatch(slave) else ""
         if resolved:
             settings.set_value("WHD_DefaultSlave.txt", archive, resolved)
         else:
@@ -312,8 +339,8 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
 
     datapath = field(form, "data path")
     if datapath:
-        if " " in datapath:
-            problems.append(f"Data path `{datapath}` must not contain spaces.")
+        if not SINGLE_TOKEN.fullmatch(datapath):
+            problems.append(f"Data path `{datapath}` must be a single word without spaces or line breaks.")
         else:
             settings.set_value("WHD_DataPath.txt", archive, datapath)
 
