@@ -33,7 +33,7 @@ body:
     id: sha1
     attributes:
       label: SHA1 Hash
-      description: SHA1 of the .lha file. Amiberry's log shows it, or use `sha1sum` / `Get-FileHash -Algorithm SHA1`. Needed when several archives share the same filename.
+      description: SHA1 of the .lha file, from `sha1sum` (Linux), `shasum -a 1` (macOS) or `Get-FileHash -Algorithm SHA1` (Windows). Needed when several archives share the same filename.
       placeholder: "e.g., a1b2c3d4e5..."
 
   - type: input

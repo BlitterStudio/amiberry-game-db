@@ -19,7 +19,7 @@ Do not edit `whdload_db.json` directly. CI rejects pull requests that touch it. 
 Use the [Game Settings Update](https://github.com/BlitterStudio/amiberry-game-db/issues/new?template=game-settings.yml) issue template.
 
 - Fill in the game name, archive filename (without `.lha`), and SHA1 hash.
-- Amiberry logs the SHA1 on launch. You can also get it with `sha1sum <archive>.lha` or `Get-FileHash -Algorithm SHA1 <archive>.lha`.
+- Get the SHA1 with `sha1sum <archive>.lha` (Linux), `shasum -a 1 <archive>.lha` (macOS) or `Get-FileHash -Algorithm SHA1 <archive>.lha` (Windows). Amiberry's log only shows it when the archive is already in the database.
 - Only fill in fields that need to change. Leave unchanged fields at default.
 - Submit one issue per archive.
 
@@ -39,6 +39,8 @@ Pull requests must not touch `whdload_db.json`.
 ## Settings Reference
 
 Settings files live in `builder/settings/`. Most files are plain text lists keyed by **subpath** (the game directory inside the archive, shared across all versions of that game). Put one subpath per line.
+
+To find a game's subpath, look at the "Game folder" line in the triage bot's comment, or the `subpath` field of the game's entry in `whdload_db.json`. Versions usually share it (`Turrican2_v1.7_0029` and `Turrican2_v2.1-B_0029` are both `Turrican2`), but variants can differ (`Turrican2_v1.4_CDTV` is `Turrican2CDTV`).
 
 ### Flag Files (One Subpath Per Line)
 
@@ -176,6 +178,8 @@ See `builder/snippets/DevilsTemple` for a reference file.
 
 Snippets are matched by SHA1. The converter adds new entries or replaces matching entries from upstream, then applies all settings and custom controls on top.
 
+Settings files decide most hardware values, so a snippet's `<hardware>` block is mostly replaced. Only `CHIPSET`, `CPU` and keys no settings file covers (such as `FAST_RAM`) survive. Put screen size, ports, clock and the rest in settings files.
+
 ## Duplicate Rules
 
 - **Issues**: One issue per archive. Requests are the same archive when their SHA1s match; the filename is compared only when a request has no SHA1. The bot labels the newer request `duplicate` and points it to the older one. It removes a label it added once the older request is closed or either request changes archive; a `duplicate` label added by a maintainer stays.
@@ -195,7 +199,7 @@ CI checks:
    - Duplicate lines or multi-word lines in list files.
    - Conflicts across exclusive groups.
    - Malformed value lines or offsets outside valid ranges.
-   - Slaves listed in `WHD_DefaultSlave.txt` or `WHD_DataPath.txt` missing from the archive.
+   - Slaves listed in `WHD_DefaultSlave.txt` or `WHD_DataPath.txt` missing from the archive, and `archive/slave` keys anywhere except `WHD_DataPath.txt`.
    - Invalid syntax in `builder/customcontrols/` files.
    - Duplicate SHA1 values in the generated database.
    - Schema conformance against `schema/whdload_db.schema.json`.
@@ -227,25 +231,33 @@ python3 converter/diff_db.py whdload_db.json out.json
 
 ### Triaging Issues
 
-When an issue is opened with the `game-update` label:
-- `.github/workflows/triage.yml` runs `converter/triage_issue.py`.
+For issues with the `game-update` label (the issue form adds it):
+- `.github/workflows/triage.yml` runs `converter/triage_issue.py` when an issue is opened, edited, reopened, closed, or gets the `game-update` label.
 - The bot looks up the archive by SHA1, falling back to filename.
-- The bot posts or updates a comment with:
+- The bot posts or updates a single comment with:
   - Current database entry details.
   - Proposed file edits in `builder/settings/` and `builder/customcontrols/`.
   - Resulting hardware configuration.
   - Other archives sharing the same subpath that will be affected.
-- If an older open issue targets the same archive, the bot adds the `duplicate` label (see Duplicate Rules).
+  - Anything it could not map to a settings file, under "Needs a maintainer".
+- If an older open issue targets the same archive, the bot adds the `duplicate` label (see Duplicate Rules). After every issue event it also re-checks the other open requests, so labels stay in step when issues close or change.
+- To re-check an older issue, add the `game-update` label or run the "Triage Game Settings Request" workflow manually with the issue number.
+- If the archive is not in the database, the comment says so. Add a snippet first (see Adding Missing Games), then re-run the triage.
+- Some requests cannot be expressed with the settings files (for example Amiberry options the booter does not set). Reply on the issue rather than approximating; supporting them needs a change to `converter/overrides.py` and to Amiberry.
 
 ### Applying an Issue
 
-Maintainers apply accepted changes locally:
+Maintainers apply accepted changes locally, on a branch from an up-to-date `main` (the script reads `whdload_db.json` and the issue through an authenticated `gh` CLI):
 
 ```bash
+git switch -c game-<subpath> origin/main
 python3 converter/triage_issue.py --issue <N> --apply
+git diff
 ```
 
-This writes the settings and custom controller files directly. Commit the changes on a branch and open a pull request with `Fixes #N` in the description.
+This writes the settings and custom controller files directly. Commit the changes and open a pull request with `Fixes #N` in the description. Before merging, check that the PR run's job summary lists only the entries you expect under "Entries changed by this PR".
+
+After the merge, the sync run on `main` publishes the change; its job summary lists it under "Changes since the last sync".
 
 ## How Updates Reach Amiberry Users
 
@@ -253,4 +265,4 @@ This writes the settings and custom controller files directly. Commit the change
 2. **Publication**: The sync workflow commits updated `whdload_db.json` to `main` and deploys it to GitHub Pages (`https://db.amiberry.com/whdload_db.json`).
 3. **Manual user update**: Inside Amiberry, click **Update WHDBooter files** in the **Paths** panel (or launch Amiberry with `--download-whdboot`). Amiberry downloads `whdload_db.json`, backing up the previous copy to `game-data/whdload_db.bak`.
 4. **Bundled release update**: Each Amiberry release bundles a copy of `whdload_db.json` refreshed at release time. Starting with the next Amiberry release, Amiberry replaces an older user database with the newer bundled copy at startup, retaining a backup file.
-5. **Runtime lookup**: When launching a game, Amiberry matches the archive SHA1 first. If the SHA1 is not found, Amiberry falls back to the last entry matching the archive filename.
+5. **Runtime lookup**: When launching a game, Amiberry uses the entry whose SHA1 matches the archive. If none does, it uses the last entry with the same filename. Amiberry 8.4.1 and earlier take the first entry that matches either the filename or the SHA1.
