@@ -15,8 +15,8 @@ upstream does it. Hardware only records what the slave headers require (AGA,
 import argparse
 import json
 import os
-import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.sax.saxutils import escape, quoteattr
 
@@ -28,31 +28,35 @@ from overrides import DEFAULT_BUILDER_DIR, Settings  # noqa: E402
 
 REPO_ROOT = os.path.dirname(DEFAULT_BUILDER_DIR)
 
-GAME_BLOCK = re.compile(r"<game\b[^>]*?\bsha1=([\"'])([0-9a-fA-F]{40})\1[^>]*>.*?</game>[ \t]*\n?", re.S)
+
+def read_snippet(path: str) -> list[ET.Element]:
+    """<game> elements of a snippet file (bare elements, parsed as XML)."""
+    with open(path, encoding="utf-8") as f:
+        try:
+            return ET.fromstring(f"<root>{f.read()}</root>").findall("game")
+        except ET.ParseError as e:
+            raise SystemExit(f"{path}: invalid XML: {e}") from None
 
 
-def snippet_blocks(snippet_dir: str) -> dict[str, tuple[str, str]]:
-    """SHA1 -> (snippet file, <game> element text) for every existing snippet."""
-    blocks: dict[str, tuple[str, str]] = {}
+def snippet_index(snippet_dir: str) -> dict[str, str]:
+    """SHA1 -> snippet file, for every existing snippet element."""
+    index: dict[str, str] = {}
     if not os.path.isdir(snippet_dir):
-        return blocks
+        return index
     for name in sorted(os.listdir(snippet_dir)):
         path = os.path.join(snippet_dir, name)
-        if not os.path.isfile(path):
-            continue
-        with open(path, encoding="utf-8") as f:
-            for match in GAME_BLOCK.finditer(f.read()):
-                blocks[match.group(2).lower()] = (path, match.group(0))
-    return blocks
+        if os.path.isfile(path):
+            for game in read_snippet(path):
+                index[game.get("sha1", "").lower()] = path
+    return index
 
 
-def remove_block(path: str, block: str) -> None:
-    """Drop one <game> element from a snippet file; delete the file if nothing is left."""
-    with open(path, encoding="utf-8") as f:
-        rest = f.read().replace(block, "", 1)
-    if GAME_BLOCK.search(rest):
+def remove_game(path: str, sha1: str) -> None:
+    """Drop the element for `sha1` from a snippet file; delete the file if nothing is left."""
+    keep = [g for g in read_snippet(path) if g.get("sha1", "").lower() != sha1]
+    if keep:
         with open(path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(rest)
+            f.write("".join(ET.tostring(g, encoding="unicode") for g in keep))
     else:
         os.remove(path)
 
@@ -106,7 +110,7 @@ def main() -> None:
             known = {g["sha1"]: g["filename"] for g in json.load(f)["games"]}
     longname_fixes = Settings(args.builder_dir).lines("WHD_Longname_Fixes.txt")
     snippet_dir = os.path.join(args.builder_dir, "snippets")
-    existing = snippet_blocks(snippet_dir)
+    existing = snippet_index(snippet_dir)
 
     failed = False
     for archive in args.archives:
@@ -128,12 +132,11 @@ def main() -> None:
             continue
 
         if sha1 in existing:
-            old_file, old_block = existing[sha1]
             if not args.force:
-                print(f"{path.name}: already in {old_file}; use --force to replace it", file=sys.stderr)
+                print(f"{path.name}: already in {existing[sha1]}; use --force to replace it", file=sys.stderr)
                 failed = True
                 continue
-            remove_block(old_file, old_block)
+            remove_game(existing[sha1], sha1)
 
         # One file per archive name; archives that share a name (different
         # SHA1s) get one <game> element each in the same file.
@@ -141,7 +144,7 @@ def main() -> None:
         os.makedirs(snippet_dir, exist_ok=True)
         with open(target, "a", encoding="utf-8", newline="\n") as f:
             f.write(xml)
-        existing[sha1] = (target, xml)
+        existing[sha1] = target
         print(f"wrote {target}: {name} (subpath {scan['subpath']}, {len(scan['slaves'])} slave(s), sha1 {sha1})")
     sys.exit(1 if failed else 0)
 
