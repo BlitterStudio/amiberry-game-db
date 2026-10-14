@@ -64,4 +64,6 @@ jobs:
         env:
           ISSUE_BODY_FILE: ${{ github.event_name == 'issues' && '/tmp/accepted-body.md' || '' }}
           REQUIRE_LABEL: ${{ github.event_name == 'issues' && '1' || '0' }}
+          # When the label was added (the labeled event updates the issue).
+          APPROVED_AT: ${{ github.event.issue.updated_at || '' }}
         run: bash .github/scripts/apply-request.sh "$ISSUE"

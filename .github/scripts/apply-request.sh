@@ -40,12 +40,19 @@ say() {
 
 drop_label() {  # remove `accepted` if present; fail the run if GitHub keeps refusing
   if dry; then echo "--- would remove label accepted"; return; fi
-  local present
+  local present newest
   present=$(retry gh issue view "$ISSUE" -R "$REPO" --json labels \
               --jq '[.labels[].name] | index("accepted") != null')
-  if [ "$present" = true ]; then
-    retry gh issue edit "$ISSUE" -R "$REPO" --remove-label accepted > /dev/null
+  [ "$present" = true ] || return 0
+  # Keep the label if someone added it again after this run's approval: that
+  # newer approval has its own run queued behind this one.
+  newest=$(retry gh api --paginate "repos/$REPO/issues/$ISSUE/events" \
+             --jq '.[] | select(.event == "labeled" and .label.name == "accepted") | .created_at' | tail -n 1)
+  if [ -n "$newest" ] && [[ "$newest" > "$APPROVED_AT" ]]; then
+    echo "accepted was added again at $newest; leaving it for that run"
+    return 0
   fi
+  retry gh issue edit "$ISSUE" -R "$REPO" --remove-label accepted > /dev/null
 }
 
 current_body() { gh issue view "$ISSUE" -R "$REPO" --json body --jq .body; }
@@ -123,6 +130,10 @@ if [ "$state" != OPEN ]; then
   exit 0
 fi
 
+# When this run's approval was given: the labeled event's time, or now for a
+# manual run. Labels added after this belong to a newer approval.
+APPROVED_AT=${APPROVED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+
 snapshot=$WORK/body.md
 if [ -n "${ISSUE_BODY_FILE:-}" ]; then
   cp "$ISSUE_BODY_FILE" "$snapshot"
@@ -162,7 +173,7 @@ for attempt in 1 2 3 4 5; do
     fi
   fi
   if [ "$status" -eq 4 ] || [ "$status" -eq 5 ]; then
-    { cat "$WORK/triage.md"; echo; echo "The \`accepted\` label was removed. Fix the request or the database, then add it again."; } > "$WORK/msg.md"
+    { cat "$WORK/triage.md"; echo; echo "Fix the request or the database, then add the \`accepted\` label again."; } > "$WORK/msg.md"
     drop_label
     say "$WORK/msg.md"
     exit 0
