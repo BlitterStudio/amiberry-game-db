@@ -25,6 +25,7 @@ import sys
 
 from overrides import (BUILDER_ONLY_FILES, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS, FLAG_FILES, OFFSET_H_RANGE,
                        OFFSET_V_RANGE, SHA1_KEY, VALUE_FILES, Settings, resolve_slave)
+from xml_to_json import load_snippets
 
 CONTROL_LINE = re.compile(r"^joyport[0-3]_amiberry_custom_(axis_)?(none|hotkey)_[a-z0-9_]+=.+$")
 OFFSET_BOUNDS = {"Screen_Offset_H.txt": OFFSET_H_RANGE, "Screen_Offset_V.txt": OFFSET_V_RANGE}
@@ -131,6 +132,12 @@ def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
                 errors.append(f"customcontrols/{name}: `{line}` is listed {count} times")
         if name not in subpaths:
             warnings.append(f"customcontrols/{name}: no game with subpath `{name}`")
+
+    # The converter would keep only the last of two snippets with one SHA1.
+    snippet_sha1s = collections.Counter(s["sha1"].lower() for s in load_snippets(builder_dir))
+    for sha1, count in snippet_sha1s.items():
+        if count > 1:
+            errors.append(f"snippets: {count} <game> elements share SHA1 {sha1}")
 
     for sha1, count in collections.Counter(g["sha1"] for g in games).items():
         if count > 1:
