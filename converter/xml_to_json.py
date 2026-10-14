@@ -197,7 +197,11 @@ def load_snippets(builder_dir: str) -> list[dict]:
         if not os.path.isfile(path):
             continue
         with open(path, encoding="utf-8") as f:
-            root = ET.fromstring(f"<root>{f.read()}</root>")
+            try:
+                root = ET.fromstring(f"<root>{f.read()}</root>")
+            except ET.ParseError as e:
+                # Line numbers are those of the file: the <root> wrapper adds no newline.
+                raise SystemExit(f"builder/snippets/{name}: invalid XML: {e}") from None
         entries.extend(convert_game(game_elem) for game_elem in root.findall("game"))
     return entries
 
@@ -257,18 +261,32 @@ def build(xml_path: str, builder_dir: str) -> tuple[dict, list[str]]:
 
     snippets = load_snippets(builder_dir)
     snippet_sha1s = {s["sha1"] for s in snippets}
-    replaced = [g["filename"] for g in upstream if g["sha1"] in snippet_sha1s]
-    games = [g for g in upstream if g["sha1"] not in snippet_sha1s] + snippets
 
     settings = Settings(builder_dir)
     changed: list[tuple[str, list[str]]] = []
-    for game in games:
+    replaced: dict[str, dict] = {}
+    for game in upstream:
         before = json.loads(json.dumps(game))
         apply_overrides(game, settings)
+        if game["sha1"] in snippet_sha1s:
+            replaced[game["sha1"]] = game
+            continue
         fields = changed_fields(before, game)
         if fields:
             changed.append((game["filename"], fields))
 
+    snippet_report: list[str] = []
+    for snippet in snippets:
+        apply_overrides(snippet, settings)
+        old = replaced.get(snippet["sha1"])
+        if old is None:
+            snippet_report.append(f"- `{snippet['filename']}`: added")
+        else:
+            fields = changed_fields(old, snippet)
+            snippet_report.append(f"- `{snippet['filename']}`: replaces upstream entry"
+                                  + (f"; {'; '.join(fields)}" if fields else " (identical)"))
+
+    games = [g for g in upstream if g["sha1"] not in snippet_sha1s] + snippets
     games, dropped = dedupe_by_sha1(games)
 
     database = {
@@ -290,6 +308,8 @@ def build(xml_path: str, builder_dir: str) -> tuple[dict, list[str]]:
     if changed:
         report += ["", "### Changed by overrides", ""]
         report += [f"- `{name}`: {'; '.join(fields)}" for name, fields in changed]
+    if snippet_report:
+        report += ["", "### Snippets", ""] + snippet_report
     if dropped:
         report += ["", "### Removed duplicates (an entry with the same SHA1 appears later)", ""]
         report += [f"- `{g['filename']}` ({g['sha1']})" for g in dropped]

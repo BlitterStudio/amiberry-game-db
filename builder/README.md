@@ -1,12 +1,10 @@
 # Amiberry Game Database Builder
 
-Scans WHDLoad LHA archives and builds the `whdload_db.json` game database.
+Scans WHDLoad LHA archives and builds the `whdload_db.json` game database. `make_snippet.py` uses the same scanner to write `snippets/` entries for archives missing from the published database (see [CONTRIBUTING.md](../CONTRIBUTING.md#adding-missing-games-snippets)).
 
-> **Not used by the published database.** `whdload_db.json` on `main` is built by `.github/workflows/sync.yml` from Horace's XML (see [CONTRIBUTING.md](../CONTRIBUTING.md)). The cron job below commits `whdload_db.json` too, and the next sync run would overwrite it. To switch to this builder, change `sync.yml` first. Known differences from the current output:
-> - Game names are formatted differently (`Pinball Illusions AGA` instead of `Pinball Illusions [AGA]`, `Battle Squadron NTSC` instead of `Battle Squadron (NTSC)`).
-> - `cpu: 68020` is added from slave headers.
+> **Not used by the published database.** `whdload_db.json` on `main` is built by `.github/workflows/sync.yml` from Horace's XML (see [CONTRIBUTING.md](../CONTRIBUTING.md)). The cron job below commits `whdload_db.json` too, and the next sync run would overwrite it. To switch to this builder, change `sync.yml` first.
 >
-> Checked against 18 archives; hardware, slaves and default slaves otherwise match.
+> Checked against 18 archives: entries match the upstream ones (names, slaves, data paths, custom fields, default slave, hardware) except that `cpu: 68020` is added when a slave header requires it. Game names use the same generator as upstream (`converter/names.py`, verified against all 11,199 upstream names).
 
 ## Quick Start
 
