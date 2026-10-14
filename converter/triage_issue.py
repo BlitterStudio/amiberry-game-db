@@ -424,11 +424,18 @@ def triage(issue: dict, others: list[dict], games: list[dict],
         out += ["Current controller mappings:", "", "```", *controls, "```", ""]
     if problems:
         out += ["### Needs a maintainer", ""] + [f"- {p}" for p in problems] + [""]
+    if field(form, "additional notes"):
+        out += ["### Additional notes", "",
+                "The bot does not act on Additional Notes. The `accepted` label applies only the changes "
+                "listed above and leaves this issue open, so anything else in the notes still needs a person.", ""]
 
     out += ["Maintainers: add the `accepted` label to apply these changes and publish them. "
             "Locally, `python3 converter/triage_issue.py --issue "
             f"{issue['number']} --apply` writes them under `builder/`."]
     return "\n".join(out) + "\n", bool(older), settings, problems
+
+
+NOTHING_TO_CHANGE = "Nothing to change: the database already has these settings."
 
 
 def refusal_reasons(duplicate: bool, settings: EditableSettings | None, problems: list[str]) -> list[str]:
@@ -441,7 +448,7 @@ def refusal_reasons(duplicate: bool, settings: EditableSettings | None, problems
         reasons.append("An older open request covers the same archive; apply or close that one first.")
     reasons += problems
     if not reasons and not settings.changes:
-        reasons.append("Nothing to change: the database already has these settings.")
+        reasons.append(NOTHING_TO_CHANGE)
     return reasons
 
 
@@ -475,9 +482,11 @@ def main() -> None:
     parser.add_argument("--builder-dir", default=DEFAULT_BUILDER_DIR)
     parser.add_argument("--apply", action="store_true", help="write the changes to builder/")
     parser.add_argument("--require-clean", action="store_true",
-                        help="with --apply: write nothing and exit 4 unless the request is unambiguous "
-                             "(in the database, no older duplicate, nothing flagged for a maintainer, "
-                             "something to change); the reasons go to --output")
+                        help="with --apply: write nothing unless the request is unambiguous (in the database, "
+                             "no older duplicate, nothing flagged for a maintainer); exit 5 if the database "
+                             "already has the settings, 4 for any other refusal; the reasons go to --output")
+    parser.add_argument("--body-file", help="use this issue body instead of fetching the current one")
+    parser.add_argument("--notes-output", help="write the request's Additional Notes (if any) to this file")
     parser.add_argument("--output", help="also write the comment (or, on refusal, the reasons) to this file")
     args = parser.parse_args()
 
@@ -490,8 +499,14 @@ def main() -> None:
     with open(args.db, encoding="utf-8") as f:
         games = json.load(f)["games"]
     issue = gh_json("issue", "view", str(args.issue), "-R", args.repo, "--json", "number,body")
+    if args.body_file:
+        with open(args.body_file, encoding="utf-8") as f:
+            issue["body"] = f.read()
     comment, duplicate, settings, problems = triage(issue, others, games, args.builder_dir)
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.notes_output:
+        with open(args.notes_output, "w", encoding="utf-8") as f:
+            f.write(field(parse_form(issue.get("body", "")), "additional notes"))
 
     if args.apply and args.require_clean:
         reasons = refusal_reasons(duplicate, settings, problems)
@@ -501,7 +516,7 @@ def main() -> None:
             if args.output:
                 with open(args.output, "w", encoding="utf-8") as f:
                     f.write(text)
-            sys.exit(4)
+            sys.exit(5 if reasons == [NOTHING_TO_CHANGE] else 4)
 
     print(comment, end="")
     if args.output:

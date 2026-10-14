@@ -52,5 +52,14 @@ jobs:
           curl -fsSL -o "$UPSTREAM_XML" \
             "https://raw.githubusercontent.com/HoraceAndTheSpider/Amiberry-XML-Builder/master/whdload_db.xml"
 
+      - name: Keep the request as it was when accepted
+        if: github.event_name == 'issues'
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: printf '%s\n' "$ISSUE_BODY" > /tmp/accepted-body.md
+
       - name: Apply, check, commit and publish
+        env:
+          ISSUE_BODY_FILE: ${{ github.event_name == 'issues' && '/tmp/accepted-body.md' || '' }}
+          REQUIRE_LABEL: ${{ github.event_name == 'issues' && '1' || '0' }}
         run: bash .github/scripts/apply-request.sh "$ISSUE"
