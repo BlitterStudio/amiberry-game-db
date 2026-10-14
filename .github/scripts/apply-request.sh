@@ -92,14 +92,17 @@ for attempt in 1 2 3 4 5; do
   python3 converter/xml_to_json.py "$UPSTREAM_XML" "$WORK/base.json" > /dev/null
 
   status=0
-  python3 converter/triage_issue.py --issue "$ISSUE" --body-file "$snapshot" --apply --require-clean \
-    --notes-output "$WORK/notes.md" --output "$WORK/triage.md" > /dev/null || status=$?
+  # Plan against the database this run builds, not the committed copy, which
+  # can be a day behind upstream (e.g. a newly added same-name archive).
+  python3 converter/triage_issue.py --issue "$ISSUE" --db "$WORK/base.json" --body-file "$snapshot" \
+    --apply --require-clean --notes-output "$WORK/notes.md" --output "$WORK/triage.md" > /dev/null || status=$?
 
   if [ "$status" -eq 5 ]; then
     # Nothing left to change. If an earlier run already pushed this request
     # but stopped before publishing, finish that run instead of refusing.
-    previous=$(git log -1 --format=%h --fixed-strings --grep="$APPLY_SUBJECT" HEAD)
-    if [ -n "$previous" ] && [ "$(git log -1 --format=%s "$previous")" = "$APPLY_SUBJECT" ]; then
+    # awk reads all of the log (no early exit) so git never gets SIGPIPE under pipefail.
+    previous=$(git log --format='%h%x09%s' HEAD | awk -F'\t' -v s="$APPLY_SUBJECT" '$2 == s && !found { print $1; found = 1 }')
+    if [ -n "$previous" ]; then
       echo "already applied in $previous; finishing publication"
       : > "$WORK/diff.md"
       publish "$previous" "$WORK/diff.md"
