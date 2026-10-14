@@ -422,7 +422,6 @@ SpaceRacerFr
 StarCrusader
 StarCrusaderAGA
 SuperOffRoad
-SuperOffRoadNTSC
 SuperSkweek1MB
 SuperSkweek512KB
 SurfNinjasAGA

@@ -71,3 +71,4 @@ Waxworks
 WaxworksDe
 WaxworksFr
 WhereTimeStoodStill
+SuperOffRoadNTSC
