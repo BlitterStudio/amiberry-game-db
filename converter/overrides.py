@@ -25,7 +25,7 @@ DEFAULT_SCREEN_WIDTH = 720
 # Later entries win when a game is listed in more than one file, matching
 # Horace's builder; the linter rejects such conflicts anyway.
 CLOCK_SPEEDS = (("7", "7"), ("14", "14"), ("25", "25"), ("28", "28"), ("Max", "max"))
-CPU_MODELS = ("68000", "68010", "68020", "68040")
+CPU_MODELS = ("68000", "68010", "68020", "68030", "68040")
 Z3_SIZES = tuple(2 ** i for i in range(8))  # 1..128 MB
 # Amiberry's WHDBooter applies these values as gfx_manual_crop_width/height and
 # gfx_horizontal/vertical_offset. The bounds are those of Amiberry's "Crop and

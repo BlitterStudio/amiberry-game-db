@@ -30,9 +30,9 @@ from overrides import (BUILDER_ONLY_FILES, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS
 from xml_to_json import load_snippets
 
 CONTROL_LINE = re.compile(r"^joyport[0-3]_amiberry_custom_(axis_)?(none|hotkey)_[a-z0-9_]+=.+$")
-# Amiberry's WHDBooter runs these on a 68020; anything else gets a 68000 or
-# 68010, and JIT needs a 68020 or higher.
-JIT_CPUS = {"68020", "68040"}
+# Amiberry's WHDBooter runs these on a 68020 or higher; anything else gets a
+# 68000 or 68010, and JIT needs a 68020 or higher.
+JIT_CPUS = {"68020", "68030", "68040"}
 # Archive-keyed files that also accept `archive/slave` keys (see Settings.datapath).
 SLAVE_KEY_FILES = {"WHD_DataPath.txt"}
 
@@ -78,7 +78,7 @@ def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
         hw = game.get("hardware", {})
         if hw.get("jit") and hw.get("chipset") != "aga" and hw.get("cpu") not in JIT_CPUS:
             errors.append(f"database: `{game['filename']}` has JIT but runs on a 68000/68010; "
-                          "JIT needs AGA or CPU 68020/68040")
+                          "JIT needs AGA or CPU 68020/68030/68040")
 
     for name, key_kind in VALUE_FILES.items():
         seen: set[str] = set()
