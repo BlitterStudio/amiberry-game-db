@@ -481,11 +481,20 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
         else:
             settings.set_controls(subpath, lines)
 
-    # Combinations Amiberry would silently ignore.
+    # Combinations Amiberry would silently ignore. CPU settings are keyed by
+    # subpath, so JIT must suit every archive of the game, not only this one.
     after = merge_hardware(entry.get("hardware", {}), settings_hardware(filename, subpath, settings))
-    if after.get("jit") and after.get("chipset") != "aga" and after.get("cpu") not in JIT_CPUS:
-        problems.append("JIT needs a 68020 or higher, and this game runs on a 68000/68010; set CPU 68020 or "
-                        "chipset AGA too, or pick another CPU emulation.")
+    no_jit = []
+    for game in games:
+        if game["subpath"] != subpath:
+            continue
+        hw = merge_hardware(game.get("hardware", {}), settings_hardware(game["filename"], subpath, settings))
+        if hw.get("jit") and hw.get("chipset") != "aga" and hw.get("cpu") not in JIT_CPUS:
+            no_jit.append(game["filename"])
+    if no_jit:
+        problems.append("JIT needs a 68020 or higher, and these archives of the game run on a 68000/68010: "
+                        + ", ".join(f"`{name}`" for name in no_jit)
+                        + ". Set CPU 68020 too, or pick another CPU emulation.")
     if after.get("chipset") == "aga" and after.get("cpu") in ("68000", "68010"):
         problems.append(f"AGA games run on a 68020 or higher in Amiberry, so CPU {after['cpu']} has no effect.")
     width = field(form, "screen width")
