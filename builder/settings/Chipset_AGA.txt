@@ -25,3 +25,4 @@ SuperSkidmarksLowMem
 SuperSkidmarksLMCD
 WildCupSoccer
 Cyberpunks
+RoguecraftDX
