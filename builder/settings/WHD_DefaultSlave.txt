@@ -4,3 +4,4 @@ FourCrystalsOfTrazere_v1.2 FourCrystalsOfTrazere.Slave
 FourCrystalsOfTrazere_v1.2_NTSC FourCrystalsOfTrazereNTSC.Slave
 3DPool_v1.2_0621 3DPool.Slave
 mpatrol_HD_v1.01 mpatrol_aga.slave
+phoenix_HD_v1.02 phoenix_AGA.slave
