@@ -1,0 +1,24 @@
+<game filename="vulgus_HD_v1.01" sha1="be13fdf7cb1670552c793cdcc1f6d21814809be2">
+	<name>Vulgus [AGA]</name>
+	<subpath></subpath>
+	<variant_uuid>237ea65e-60b4-5989-ba02-feb0f9cfe18e</variant_uuid>
+	<slave_count>1</slave_count>
+	<slave_default>vulgus.slave</slave_default>
+	<slave_libraries>False</slave_libraries>
+	<slave number="1">
+		<filename>vulgus.slave</filename>
+		<datapath></datapath>
+		<custom>
+		C1:X:invincible:0
+		C1:X:infinite lives:1
+		C1:X:cheat keys:4
+		C2:X:50 Hz update:0
+		C2:X:disable long fire press for laser:1
+		C2:X:disable music:2
+		C4:L:lives:3,5,1,2
+		</custom>
+	</slave>
+	<hardware>
+		CHIPSET=AGA
+	</hardware>
+</game>
