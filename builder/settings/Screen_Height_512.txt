@@ -3,6 +3,7 @@
 AlienBash2
 AlienBreed
 AlienBreedSpecialEdition
+Arkanoid
 Atomix
 AttackOfTheGreenSmellyAliens
 BansheeAGA

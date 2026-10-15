@@ -1,7 +1,6 @@
 AlienBreed3DAGA
 AlienBreed3DCD32
 AlienBreed3DNoMusicAGA
-Arkanoid
 ArkanoidNTSC
 BeyondTheIcePalace
 BloodMoney
