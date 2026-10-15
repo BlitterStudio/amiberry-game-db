@@ -1,5 +1,6 @@
 AlienBreed 18
 AlienBreedSpecialEdition 18
+Arkanoid 20
 BadDudes 18
 BadDudesVsDragonNinja 18
 BadDudesVsDragonNinjaChip 18
