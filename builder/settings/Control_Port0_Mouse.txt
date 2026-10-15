@@ -153,8 +153,8 @@ Damocles
 DarkQueenOfKrynn
 DarkSeed
 DarkSeedCD32
-DarkSeedDe 
-DarkSeedEs 
+DarkSeedDe
+DarkSeedEs
 DarkSeedFr
 DeconstructionAGA
 DefenderOfTheCrown
@@ -636,3 +636,4 @@ ZakMcKracken
 Zeewolf
 Zeewolf2
 Zoom
+RoguecraftDX

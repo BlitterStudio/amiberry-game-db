@@ -13,3 +13,4 @@ SuperSkidmarksFYEdLMCD
 SuperSkidmarksCD
 SuperSkidmarksLowMem
 SuperSkidmarksLMCD
+RoguecraftDX
