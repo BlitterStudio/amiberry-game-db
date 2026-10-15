@@ -17,16 +17,29 @@ import re
 SHA1_KEY = re.compile(r"[0-9a-f]{40}")
 DEFAULT_BUILDER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "builder")
 
+# Horace's fixed sizes, one list file each. Any other size goes in the
+# Screen_Height.txt / Screen_Width.txt value files.
 SCREEN_HEIGHTS = ("400", "432", "480", "512", "524", "540", "568")
 SCREEN_WIDTHS = ("640", "704")
-DEFAULT_SCREEN_WIDTH = "720"
+DEFAULT_SCREEN_WIDTH = 720
 # Later entries win when a game is listed in more than one file, matching
 # Horace's builder; the linter rejects such conflicts anyway.
 CLOCK_SPEEDS = (("7", "7"), ("14", "14"), ("25", "25"), ("28", "28"), ("Max", "max"))
 CPU_MODELS = ("68000", "68010", "68020", "68040")
 Z3_SIZES = tuple(2 ** i for i in range(8))  # 1..128 MB
-OFFSET_H_RANGE = (-60, 60)
-OFFSET_V_RANGE = (-20, 20)
+# Amiberry's WHDBooter applies these values as gfx_manual_crop_width/height and
+# gfx_horizontal/vertical_offset. The bounds are those of Amiberry's "Crop and
+# Offset" controls at its default hires, double-line display:
+# AMIGA_WIDTH_MAX (377) << 1 and AMIGA_HEIGHT_MAX (288) << 1.
+VALUE_BOUNDS = {
+    "Screen_Width.txt": (1, 754),
+    "Screen_Height.txt": (1, 576),
+    "Screen_Offset_H.txt": (-754, 754),
+    "Screen_Offset_V.txt": (-576, 576),
+}
+# CPU emulation modes, one file each. Amiberry's WHDLoad presets are already
+# cycle-exact, and cycle-exact needs the compatible CPU, which JIT turns off.
+CPU_EMULATION_FILES = ("CPU_CycleExact.txt", "CPU_NoCycleExact.txt", "CPU_NoCompatible.txt", "CPU_ForceJIT.txt")
 
 # Plain list files: one subpath per line.
 FLAG_FILES = (
@@ -38,9 +51,7 @@ FLAG_FILES = (
     "Control_Port0_Mouse.txt",
     "Control_Port1_CD32.txt",
     "Control_Port1_Mouse.txt",
-    "CPU_CycleExact.txt",
-    "CPU_ForceJIT.txt",
-    "CPU_NoCompatible.txt",
+    *CPU_EMULATION_FILES,
     "Screen_NoCenter_H.txt",
     "Screen_NoCenter_V.txt",
     "WHD_Libraries.txt",
@@ -54,6 +65,8 @@ FLAG_FILES = (
 # "key value" files. Archive keys are the archive filename or, when several
 # archives share a filename, the archive's SHA1 (a SHA1 key wins).
 VALUE_FILES = {
+    "Screen_Height.txt": "subpath",
+    "Screen_Width.txt": "subpath",
     "Screen_Offset_H.txt": "subpath",
     "Screen_Offset_V.txt": "subpath",
     "WHD_DefaultSlave.txt": "archive",
@@ -65,8 +78,9 @@ BUILDER_ONLY_FILES = ("WHD_Longname_Fixes.txt",)
 
 # A game may appear in at most one file of each group.
 EXCLUSIVE_GROUPS = {
-    "screen height": [f"Screen_Height_{h}.txt" for h in SCREEN_HEIGHTS],
-    "screen width": [f"Screen_Width_{w}.txt" for w in SCREEN_WIDTHS],
+    "screen height": [*(f"Screen_Height_{h}.txt" for h in SCREEN_HEIGHTS), "Screen_Height.txt"],
+    "screen width": [*(f"Screen_Width_{w}.txt" for w in SCREEN_WIDTHS), "Screen_Width.txt"],
+    "CPU emulation": list(CPU_EMULATION_FILES),
     "CPU clock": [f"CPU_ClockSpeed_{name}.txt" for name, _ in CLOCK_SPEEDS],
     "CPU model": [f"CPU_Model_{model}.txt" for model in CPU_MODELS],
     "Z3 RAM": [f"Memory_Z3Ram_{size}.txt" for size in Z3_SIZES],
@@ -113,6 +127,12 @@ class Settings:
         path = os.path.join(self.settings_dir, filename)
         return _read_lines(path) if os.path.isfile(path) else []
 
+    def keys(self, filename: str) -> list[str]:
+        """Games a settings file names: whole lines, or the key of `key value` lines."""
+        if filename in VALUE_FILES:
+            return [line.split()[0] for line in self.lines(filename)]
+        return self.lines(filename)
+
     def listed(self, filename: str, subpath: str) -> bool:
         entries = self._lists.get(filename)
         if entries is None:
@@ -158,10 +178,11 @@ class Settings:
         return ""
 
 
-def _offset(raw: str, bounds: tuple[int, int]) -> int | None:
+def _bounded_int(filename: str, raw: str) -> int | None:
     if not re.fullmatch(r"-?\d+", raw):
         return None
-    return max(bounds[0], min(bounds[1], int(raw)))
+    low, high = VALUE_BOUNDS[filename]
+    return max(low, min(high, int(raw)))
 
 
 def settings_hardware(filename: str, subpath: str, settings: Settings) -> dict:
@@ -192,6 +213,8 @@ def settings_hardware(filename: str, subpath: str, settings: Settings) -> dict:
         hw["cpu_compatible"] = False
     if listed("CPU_CycleExact.txt"):
         hw["cpu_exact"] = True
+    elif listed("CPU_NoCycleExact.txt"):
+        hw["cpu_exact"] = False
     if listed("CPU_ForceJIT.txt"):
         hw["jit"] = True
     if listed("Chipset_ForceNTSC.txt") or "NTSC" in filename:
@@ -203,16 +226,20 @@ def settings_hardware(filename: str, subpath: str, settings: Settings) -> dict:
     hw["port0"] = "mouse" if mouse0 else "cd32" if cd32_both or listed("Control_Port0_CD32.txt") else "joy"
     hw["port1"] = "mouse" if mouse1 else "cd32" if cd32_both or listed("Control_Port1_CD32.txt") else "joy"
 
-    height = next((h for h in SCREEN_HEIGHTS if listed(f"Screen_Height_{h}.txt")), "")
-    width = next((w for w in SCREEN_WIDTHS if listed(f"Screen_Width_{w}.txt")), DEFAULT_SCREEN_WIDTH)
-    hw["screen_autoheight"] = not height
-    if height:
-        hw["screen_height"] = int(height)
-    if height or width != DEFAULT_SCREEN_WIDTH:
-        hw["screen_width"] = int(width)
+    height = _bounded_int("Screen_Height.txt", settings.value("Screen_Height.txt", subpath))
+    if height is None:
+        height = next((int(h) for h in SCREEN_HEIGHTS if listed(f"Screen_Height_{h}.txt")), None)
+    width = _bounded_int("Screen_Width.txt", settings.value("Screen_Width.txt", subpath))
+    if width is None:
+        width = next((int(w) for w in SCREEN_WIDTHS if listed(f"Screen_Width_{w}.txt")), DEFAULT_SCREEN_WIDTH)
+    hw["screen_autoheight"] = height is None
+    if height is not None:
+        hw["screen_height"] = height
+    if height is not None or width != DEFAULT_SCREEN_WIDTH:
+        hw["screen_width"] = width
 
-    offset_h = _offset(settings.value("Screen_Offset_H.txt", subpath), OFFSET_H_RANGE)
-    offset_v = _offset(settings.value("Screen_Offset_V.txt", subpath), OFFSET_V_RANGE)
+    offset_h = _bounded_int("Screen_Offset_H.txt", settings.value("Screen_Offset_H.txt", subpath))
+    offset_v = _bounded_int("Screen_Offset_V.txt", settings.value("Screen_Offset_V.txt", subpath))
     hw["screen_centerh"] = "none" if offset_h is not None or listed("Screen_NoCenter_H.txt") else "smart"
     hw["screen_centerv"] = "none" if offset_v is not None or listed("Screen_NoCenter_V.txt") else "smart"
     if offset_h is not None:

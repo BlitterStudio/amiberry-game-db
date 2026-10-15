@@ -59,13 +59,14 @@ To find a game's subpath, look at the "Game folder" line in the triage bot's com
 | `CPU_ClockSpeed_25.txt` | Set CPU clock to 25 MHz. |
 | `CPU_ClockSpeed_28.txt` | Set CPU clock to 28 MHz. |
 | `CPU_ClockSpeed_Max.txt` | Set CPU clock to maximum. |
-| `CPU_CycleExact.txt` | Enable cycle-exact CPU mode. |
-| `CPU_ForceJIT.txt` | Enable JIT compilation. |
-| `CPU_Model_68000.txt` | Set CPU model to 68000. |
-| `CPU_Model_68010.txt` | Set CPU model to 68010. |
+| `CPU_CycleExact.txt` | Cycle-exact CPU and chipset. Amiberry's WHDLoad setup is already cycle-exact unless JIT is on, so this only makes the choice explicit. |
+| `CPU_ForceJIT.txt` | Enable JIT compilation; turns off cycle-exact and CPU compatible mode. Needs a 68020 or higher (AGA, or `CPU_Model_68020/68040`). |
+| `CPU_Model_68000.txt` | Set CPU model to 68000. Non-AGA games only; AGA and CD32 games always get at least a 68020. |
+| `CPU_Model_68010.txt` | Set CPU model to 68010. Non-AGA games only; AGA and CD32 games always get at least a 68020. |
 | `CPU_Model_68020.txt` | Set CPU model to 68020. |
-| `CPU_Model_68040.txt` | Set CPU model to 68040. |
-| `CPU_NoCompatible.txt` | Disable CPU compatible mode. |
+| `CPU_Model_68040.txt` | Set CPU model to 68040. On AGA and CD32 games this needs an Amiberry version after 8.4.1; earlier versions use a 68020. |
+| `CPU_NoCompatible.txt` | Turn off CPU compatible mode, and with it cycle-exact (cycle-exact needs compatible mode). Takes effect in Amiberry versions after 8.4.1. |
+| `CPU_NoCycleExact.txt` | Turn off cycle-exact; CPU compatible mode stays on. Takes effect in Amiberry versions after 8.4.1. |
 | `Memory_Z3Ram_1.txt` | Add 1 MB Zorro III RAM; turns off 24-bit addressing. |
 | `Memory_Z3Ram_2.txt` | Add 2 MB Zorro III RAM; turns off 24-bit addressing. |
 | `Memory_Z3Ram_4.txt` | Add 4 MB Zorro III RAM; turns off 24-bit addressing. |
@@ -95,10 +96,14 @@ Lines in these files contain two tokens separated by whitespace: `<key> <value>`
 
 | File | Key Type | Value | Effect |
 |---|---|---|---|
-| `Screen_Offset_H.txt` | subpath | Integer `-60` to `60` | Horizontal pixel offset; disables horizontal centering. |
-| `Screen_Offset_V.txt` | subpath | Integer `-20` to `20` | Vertical pixel offset; disables vertical centering. |
+| `Screen_Height.txt` | subpath | Integer `1` to `576` | Screen height other than the `Screen_Height_*.txt` sizes. |
+| `Screen_Width.txt` | subpath | Integer `1` to `754` | Screen width other than the `Screen_Width_*.txt` sizes. |
+| `Screen_Offset_H.txt` | subpath | Integer `-754` to `754` | Horizontal offset; disables horizontal centering. |
+| `Screen_Offset_V.txt` | subpath | Integer `-576` to `576` | Vertical offset; disables vertical centering. |
 | `WHD_DefaultSlave.txt` | archive | Slave filename | Default slave to execute for the archive. |
 | `WHD_DataPath.txt` | archive, or `archive/slave` | Directory name | Data directory expected by the slave. |
+
+Screen sizes and offsets are the Width, Height, H. Offset and V. Offset values of Amiberry's Crop and Offset settings, and the ranges are what those settings accept at Amiberry's default (hires, double-line) display. Without a screen height Amiberry crops automatically and ignores the width and both offsets.
 
 An archive key is the archive filename without `.lha`. Some filenames belong to more than one archive (different SHA1s); use the archive's SHA1 as the key to target only one of them. A SHA1 key wins over a filename key, and the triage bot picks the SHA1 key automatically when the filename is shared.
 
@@ -112,8 +117,9 @@ An archive key is the archive filename without `.lha`. Some filenames belong to 
 
 A game subpath may appear in at most one file in each of these groups:
 
-- **Screen height**: `Screen_Height_*.txt` (if none match, auto-height is enabled)
-- **Screen width**: `Screen_Width_*.txt` (default is 720)
+- **Screen height**: `Screen_Height_*.txt`, `Screen_Height.txt` (if none match, auto-height is enabled)
+- **Screen width**: `Screen_Width_*.txt`, `Screen_Width.txt` (default is 720)
+- **CPU emulation**: `CPU_CycleExact.txt`, `CPU_NoCycleExact.txt`, `CPU_NoCompatible.txt`, `CPU_ForceJIT.txt`
 - **CPU clock**: `CPU_ClockSpeed_*.txt`
 - **CPU model**: `CPU_Model_*.txt`
 - **Z3 RAM**: `Memory_Z3Ram_*.txt`
@@ -211,8 +217,9 @@ CI checks:
 3. **Lints overrides and schema**: Runs `converter/check_overrides.py`:
    - Unknown file names in `builder/settings/`.
    - Duplicate lines or multi-word lines in list files.
-   - Conflicts across exclusive groups.
-   - Malformed value lines or offsets outside valid ranges.
+   - Conflicts across exclusive groups, such as cycle-exact and JIT for one game.
+   - JIT for a game that runs on a 68000 or 68010.
+   - Malformed value lines, or screen sizes and offsets outside valid ranges.
    - Slaves listed in `WHD_DefaultSlave.txt` or `WHD_DataPath.txt` missing from the archive, and `archive/slave` keys anywhere except `WHD_DataPath.txt`.
    - Invalid syntax in `builder/customcontrols/` files.
    - Duplicate SHA1 values in the generated database, or in two snippet `<game>` elements.

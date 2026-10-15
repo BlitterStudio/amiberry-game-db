@@ -3,9 +3,11 @@
 
 Errors (exit status 1):
   - unknown files in settings/ (a typo would be ignored silently)
-  - duplicate lines, malformed lines, out-of-range offsets
+  - duplicate lines, malformed lines, screen sizes or offsets out of range
   - a game listed in more than one file of an exclusive group
-    (two screen heights, two CPU clocks, mouse and CD32 on one port, ...)
+    (two screen heights, two CPU clocks, mouse and CD32 on one port,
+    cycle-exact and JIT, ...)
+  - JIT for a game whose CPU is below 68020
   - a WHD_DefaultSlave.txt slave that the archive does not contain
   - customcontrols lines that are not amiberry_custom mappings
   - more than one database entry with the same SHA1
@@ -23,12 +25,14 @@ import os
 import re
 import sys
 
-from overrides import (BUILDER_ONLY_FILES, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS, FLAG_FILES, OFFSET_H_RANGE,
-                       OFFSET_V_RANGE, SHA1_KEY, VALUE_FILES, Settings, resolve_slave)
+from overrides import (BUILDER_ONLY_FILES, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS, FLAG_FILES, SHA1_KEY,
+                       VALUE_BOUNDS, VALUE_FILES, Settings, resolve_slave)
 from xml_to_json import load_snippets
 
 CONTROL_LINE = re.compile(r"^joyport[0-3]_amiberry_custom_(axis_)?(none|hotkey)_[a-z0-9_]+=.+$")
-OFFSET_BOUNDS = {"Screen_Offset_H.txt": OFFSET_H_RANGE, "Screen_Offset_V.txt": OFFSET_V_RANGE}
+# Amiberry's WHDBooter runs these on a 68020; anything else gets a 68000 or
+# 68010, and JIT needs a 68020 or higher.
+JIT_CPUS = {"68020", "68040"}
 # Archive-keyed files that also accept `archive/slave` keys (see Settings.datapath).
 SLAVE_KEY_FILES = {"WHD_DataPath.txt"}
 
@@ -64,11 +68,17 @@ def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
     for group, files in EXCLUSIVE_GROUPS.items():
         owners: dict[str, list[str]] = collections.defaultdict(list)
         for name in files:
-            for line in set(settings.lines(name)):
-                owners[line].append(name)
+            for key in set(settings.keys(name)):
+                owners[key].append(name)
         for game, names in sorted(owners.items()):
             if len(names) > 1:
                 errors.append(f"`{game}` has conflicting {group} settings: {', '.join(names)}")
+
+    for game in games:
+        hw = game.get("hardware", {})
+        if hw.get("jit") and hw.get("chipset") != "aga" and hw.get("cpu") not in JIT_CPUS:
+            errors.append(f"database: `{game['filename']}` has JIT but runs on a 68000/68010; "
+                          "JIT needs AGA or CPU 68020/68040")
 
     for name, key_kind in VALUE_FILES.items():
         seen: set[str] = set()
@@ -82,10 +92,10 @@ def check(builder_dir: str, games: list[dict]) -> tuple[list[str], list[str]]:
                 errors.append(f"settings/{name}: `{key}` is listed more than once")
             seen.add(key)
 
-            if name in OFFSET_BOUNDS:
-                low, high = OFFSET_BOUNDS[name]
+            if name in VALUE_BOUNDS:
+                low, high = VALUE_BOUNDS[name]
                 if not re.fullmatch(r"-?\d+", value) or not low <= int(value) <= high:
-                    errors.append(f"settings/{name}: `{line}` offset must be an integer from {low} to {high}")
+                    errors.append(f"settings/{name}: `{line}` value must be an integer from {low} to {high}")
                 if key not in subpaths:
                     warnings.append(f"settings/{name}: no game with subpath `{key}`")
                 continue

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Only fill in what should change. Leave everything else on "No change".
+        Only fill in what should change. Leave everything else empty or on "No change".
 
         Settings marked **(all versions)** apply to every archive of the game that shares the same folder name, for example all `Turrican2_*.lha` versions. Default slave and data path apply to this archive only.
 
@@ -59,6 +59,7 @@ body:
     id: cpu
     attributes:
       label: CPU (all versions)
+      description: AGA and CD32 games run on a 68020, or a 68040 when that is selected (Amiberry versions after 8.4.1; earlier versions always use a 68020). 68000 and 68010 apply to non-AGA games only.
       options:
         - No change
         - "68000"
@@ -78,6 +79,21 @@ body:
         - "25 MHz"
         - "28 MHz"
         - Max
+      default: 0
+
+  - type: dropdown
+    id: cpu_emulation
+    attributes:
+      label: CPU Emulation (all versions)
+      description: |
+        Pick one; these modes exclude each other. Amiberry already runs WHDLoad games cycle-exact unless JIT is on. Cycle-exact needs CPU compatible mode, so turning that off also turns cycle-exact off. JIT needs a 68020 or higher: set CPU to 68020/68040 or use an AGA archive.
+        The two "Not cycle-exact" options work in Amiberry versions after 8.4.1.
+      options:
+        - No change
+        - Cycle-exact (Amiberry default)
+        - Not cycle-exact
+        - Not cycle-exact, CPU compatible off
+        - JIT (68020 or higher)
       default: 0
 
   - type: dropdown
@@ -119,44 +135,33 @@ body:
         - CD32 pad
       default: 0
 
-  - type: dropdown
+  - type: input
     id: screen_height
     attributes:
       label: Screen Height (all versions)
-      options:
-        - No change
-        - Automatic
-        - "400"
-        - "432"
-        - "480"
-        - "512"
-        - "524"
-        - "540"
-        - "568"
-      default: 0
+      description: The Height value from Amiberry's Crop and Offset settings, 1 to 576, or Automatic. Common values are 400, 432, 480, 512, 524, 540 and 568.
+      placeholder: "e.g., 512"
 
-  - type: dropdown
+  - type: input
     id: screen_width
     attributes:
       label: Screen Width (all versions)
-      options:
-        - No change
-        - "640"
-        - "704"
-        - "720"
-      default: 0
+      description: The Width value from Amiberry's Crop and Offset settings, 1 to 754. The default is 720. Width and offsets only take effect when the screen height is not Automatic.
+      placeholder: "e.g., 660"
 
   - type: input
     id: offset_h
     attributes:
       label: Horizontal Screen Offset (all versions)
-      description: -60 to 60. Setting an offset turns off horizontal centering.
+      description: The H. Offset value from Amiberry's Crop and Offset settings, -754 to 754. Setting an offset turns off horizontal centering.
+      placeholder: "e.g., 90"
 
   - type: input
     id: offset_v
     attributes:
       label: Vertical Screen Offset (all versions)
-      description: -20 to 20. Setting an offset turns off vertical centering.
+      description: The V. Offset value from Amiberry's Crop and Offset settings, -576 to 576. Setting an offset turns off vertical centering.
+      placeholder: "e.g., 72"
 
   - type: checkboxes
     id: flags
@@ -165,10 +170,7 @@ body:
       description: Tick only what the game needs. To turn something off, say so in Additional Notes.
       options:
         - label: NTSC
-        - label: JIT
         - label: Immediate blitter
-        - label: Turn off CPU compatible mode
-        - label: Cycle-exact CPU
         - label: Turn off horizontal centering
         - label: Turn off vertical centering
         - label: Needs extra libraries (e.g. xpk)
