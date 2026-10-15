@@ -59,12 +59,13 @@ body:
     id: cpu
     attributes:
       label: CPU (all versions)
-      description: AGA and CD32 games run on a 68020, or a 68040 when that is selected (Amiberry versions after 8.4.1; earlier versions always use a 68020). 68000 and 68010 apply to non-AGA games only.
+      description: AGA and CD32 games run on a 68020 unless 68030 or 68040 is selected. 68000 and 68010 apply to non-AGA games only. A 68030, and a 68040 on AGA and CD32 games, need an Amiberry version after 8.4.1; earlier versions use a 68020 instead (or a 68000 for a non-AGA game when an A600 Kickstart ROM is available).
       options:
         - No change
         - "68000"
         - "68010"
         - "68020"
+        - "68030"
         - "68040"
       default: 0
 
@@ -86,7 +87,7 @@ body:
     attributes:
       label: CPU Emulation (all versions)
       description: |
-        Pick one; these modes exclude each other. Amiberry already runs WHDLoad games cycle-exact unless JIT is on. Cycle-exact needs CPU compatible mode, so turning that off also turns cycle-exact off. JIT needs a 68020 or higher: set CPU to 68020/68040 or use an AGA archive.
+        Pick one; these modes exclude each other. Amiberry already runs WHDLoad games cycle-exact unless JIT is on. Cycle-exact needs CPU compatible mode, so turning that off also turns cycle-exact off. JIT needs a 68020 or higher: set CPU to 68020, 68030 or 68040, or use an AGA archive.
         The two "Not cycle-exact" options work in Amiberry versions after 8.4.1.
       options:
         - No change

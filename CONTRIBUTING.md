@@ -60,10 +60,11 @@ To find a game's subpath, look at the "Game folder" line in the triage bot's com
 | `CPU_ClockSpeed_28.txt` | Set CPU clock to 28 MHz. |
 | `CPU_ClockSpeed_Max.txt` | Set CPU clock to maximum. |
 | `CPU_CycleExact.txt` | Cycle-exact CPU and chipset. Amiberry's WHDLoad setup is already cycle-exact unless JIT is on, so this only makes the choice explicit. |
-| `CPU_ForceJIT.txt` | Enable JIT compilation; turns off cycle-exact and CPU compatible mode. Needs a 68020 or higher (AGA, or `CPU_Model_68020/68040`). |
+| `CPU_ForceJIT.txt` | Enable JIT compilation; turns off cycle-exact and CPU compatible mode. Needs a 68020 or higher (AGA, or `CPU_Model_68020/68030/68040`). |
 | `CPU_Model_68000.txt` | Set CPU model to 68000. Non-AGA games only; AGA and CD32 games always get at least a 68020. |
 | `CPU_Model_68010.txt` | Set CPU model to 68010. Non-AGA games only; AGA and CD32 games always get at least a 68020. |
 | `CPU_Model_68020.txt` | Set CPU model to 68020. |
+| `CPU_Model_68030.txt` | Set CPU model to 68030. Needs an Amiberry version after 8.4.1; earlier versions use a 68020 on AGA and CD32 games, and a 68000 on other games when an A600 Kickstart ROM is available. |
 | `CPU_Model_68040.txt` | Set CPU model to 68040. On AGA and CD32 games this needs an Amiberry version after 8.4.1; earlier versions use a 68020. |
 | `CPU_NoCompatible.txt` | Turn off CPU compatible mode, and with it cycle-exact (cycle-exact needs compatible mode). Takes effect in Amiberry versions after 8.4.1. |
 | `CPU_NoCycleExact.txt` | Turn off cycle-exact; CPU compatible mode stays on. Takes effect in Amiberry versions after 8.4.1. |
