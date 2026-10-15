@@ -14,3 +14,4 @@ SuperSkidmarksCD
 SuperSkidmarksLowMem
 SuperSkidmarksLMCD
 RoguecraftDX
+OutRunAmigaEditionAGA
