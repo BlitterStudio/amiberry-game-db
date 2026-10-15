@@ -21,9 +21,9 @@ import re
 import subprocess
 import sys
 
-from check_overrides import CONTROL_LINE
-from overrides import (CLOCK_SPEEDS, CPU_MODELS, DEFAULT_BUILDER_DIR, EXCLUSIVE_GROUPS, OFFSET_H_RANGE,
-                       OFFSET_V_RANGE, SCREEN_HEIGHTS, SCREEN_WIDTHS, SHA1_KEY, Z3_SIZES, Settings,
+from check_overrides import CONTROL_LINE, JIT_CPUS
+from overrides import (CLOCK_SPEEDS, CPU_MODELS, DEFAULT_BUILDER_DIR, DEFAULT_SCREEN_WIDTH, EXCLUSIVE_GROUPS,
+                       SCREEN_HEIGHTS, SCREEN_WIDTHS, SHA1_KEY, VALUE_BOUNDS, VALUE_FILES, Z3_SIZES, Settings,
                        merge_hardware, resolve_slave, settings_hardware)
 
 MARKER = "<!-- game-db-triage -->"
@@ -40,15 +40,25 @@ SUBPATH_PART = re.compile(r"[A-Za-z0-9_!&+.-]+")
 FLAG_LABELS = {
     "ntsc": "Chipset_ForceNTSC.txt",
     "ntsc mode required": "Chipset_ForceNTSC.txt",
-    "jit": "CPU_ForceJIT.txt",
-    "jit recommended": "CPU_ForceJIT.txt",
     "immediate blitter": "Chipset_ImmediateBlitter.txt",
-    "turn off cpu compatible mode": "CPU_NoCompatible.txt",
-    "cycle-exact cpu": "CPU_CycleExact.txt",
     "turn off horizontal centering": "Screen_NoCenter_H.txt",
     "turn off vertical centering": "Screen_NoCenter_V.txt",
     "needs extra libraries (e.g. xpk)": "WHD_Libraries.txt",
     "slave needs libraries": "WHD_Libraries.txt",
+}
+# CPU emulation dropdown options -> settings file. The modes exclude each other.
+CPU_EMULATION_OPTIONS = {
+    "cycle-exact (amiberry default)": "CPU_CycleExact.txt",
+    "not cycle-exact": "CPU_NoCycleExact.txt",
+    "not cycle-exact, cpu compatible off": "CPU_NoCompatible.txt",
+    "jit (68020 or higher)": "CPU_ForceJIT.txt",
+}
+# The same modes as checkboxes in earlier versions of the form.
+CPU_EMULATION_LABELS = {
+    "cycle-exact cpu": "CPU_CycleExact.txt",
+    "turn off cpu compatible mode": "CPU_NoCompatible.txt",
+    "jit": "CPU_ForceJIT.txt",
+    "jit recommended": "CPU_ForceJIT.txt",
 }
 PORT_FILES = ["Control_CD32.txt", "Control_Port0_Mouse.txt", "Control_Port0_CD32.txt",
               "Control_Port1_Mouse.txt", "Control_Port1_CD32.txt"]
@@ -75,6 +85,7 @@ HEADING_KEYS = {
     "screen width (all versions)": "screen width",
     "horizontal screen offset (all versions)": "horizontal screen offset",
     "vertical screen offset (all versions)": "vertical screen offset",
+    "cpu emulation (all versions)": "cpu emulation",
     "turn on (all versions)": "turn on",
     "default slave (this archive)": "default slave",
     "data path (this archive)": "data path",
@@ -215,9 +226,13 @@ class EditableSettings(Settings):
             self._touch()
 
     def remove(self, filename: str, key: str) -> None:
-        if key in self.lines(filename):
-            self.lines(filename).remove(key)
-            self.changes.append(f"remove `{key}` from `builder/settings/{filename}`")
+        lines = self.lines(filename)
+        old = [line for line in lines
+               if (line.split()[:1] == [key] if filename in VALUE_FILES else line == key)]
+        for line in old:
+            lines.remove(line)
+            self.changes.append(f"remove `{line}` from `builder/settings/{filename}`")
+        if old:
             self._touch()
 
     def set_value(self, filename: str, key: str, value: str) -> None:
@@ -240,12 +255,17 @@ class EditableSettings(Settings):
             self.changes.append(f"write these {len(lines)} mapping(s) to `builder/customcontrols/{subpath}`:\n"
                                 f"  ```{shown}\n  ```")
 
-    def exclusive(self, group: str, filename: str | None, key: str) -> None:
-        """Make `filename` the only file of `group` listing `key` (None: none)."""
+    def exclusive(self, group: str, filename: str | None, key: str, value: str = "") -> None:
+        """Make `filename` the only file of `group` naming `key` (None: none).
+
+        `value` is the value for a `key value` file.
+        """
         for name in EXCLUSIVE_GROUPS[group]:
             if name != filename:
                 self.remove(name, key)
-        if filename:
+        if filename in VALUE_FILES:
+            self.set_value(filename, key, value)
+        elif filename:
             self.add(filename, key)
 
     def write(self) -> None:
@@ -377,36 +397,37 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
             problems.append(f"The archive name contains `_CD32`, so the ports end up as {effective[0]}/{effective[1]} "
                             f"instead of the requested {wanted_ports[0]}/{wanted_ports[1]}.")
 
-    height = field(form, "screen height").lower()
-    if height == "automatic":
-        settings.exclusive("screen height", None, subpath)
-    elif height:
-        if height in SCREEN_HEIGHTS:
-            settings.exclusive("screen height", f"Screen_Height_{height}.txt", subpath)
-        else:
-            problems.append(f"Unsupported screen height `{height}` (supported: {', '.join(SCREEN_HEIGHTS)}).")
-
-    width = field(form, "screen width").lower()
-    if width == "720":
-        settings.exclusive("screen width", None, subpath)
-    elif width:
-        if width in SCREEN_WIDTHS:
-            settings.exclusive("screen width", f"Screen_Width_{width}.txt", subpath)
-        else:
-            problems.append(f"Unsupported screen width `{width}` (supported: {', '.join(SCREEN_WIDTHS)}, 720).")
-
-    for heading, filename_, bounds in (("horizontal screen offset", "Screen_Offset_H.txt", OFFSET_H_RANGE),
-                                       ("vertical screen offset", "Screen_Offset_V.txt", OFFSET_V_RANGE)):
-        value = field(form, heading)
-        if value:
-            if re.fullmatch(r"-?[0-9]+", value) and bounds[0] <= int(value) <= bounds[1]:
-                settings.set_value(filename_, subpath, value)
+    # Horace's fixed sizes keep their list files; any other size goes in the value file.
+    for heading, name, fixed, default in (("screen height", "Screen_Height", SCREEN_HEIGHTS, "automatic"),
+                                          ("screen width", "Screen_Width", SCREEN_WIDTHS, str(DEFAULT_SCREEN_WIDTH))):
+        value = field(form, heading).lower()
+        low, high = VALUE_BOUNDS[f"{name}.txt"]
+        if value == default:
+            settings.exclusive(heading, None, subpath)
+        elif re.fullmatch(r"[0-9]+", value) and low <= int(value) <= high:
+            value = str(int(value))
+            if value in fixed:
+                settings.exclusive(heading, f"{name}_{value}.txt", subpath)
             else:
-                problems.append(f"{heading.capitalize()} `{value}` must be an integer from {bounds[0]} to {bounds[1]}.")
+                settings.exclusive(heading, f"{name}.txt", subpath, value)
+        elif value:
+            allowed = f"a whole number from {low} to {high}" + (", or Automatic" if default == "automatic" else "")
+            problems.append(f"{heading.capitalize()} `{value}` must be {allowed}.")
+
+    offset_headings = (("horizontal screen offset", "Screen_Offset_H.txt"),
+                       ("vertical screen offset", "Screen_Offset_V.txt"))
+    for heading, name in offset_headings:
+        value = field(form, heading)
+        low, high = VALUE_BOUNDS[name]
+        if value:
+            if re.fullmatch(r"-?[0-9]+", value) and low <= int(value) <= high:
+                settings.set_value(name, subpath, str(int(value)))
+            else:
+                problems.append(f"{heading.capitalize()} `{value}` must be a whole number from {low} to {high}.")
 
     # Every line of a checkbox section must be a known option, ticked or not;
     # anything else (an added instruction) needs a person.
-    known_options = set(FLAG_LABELS) | {"cpu compatible mode"}
+    known_options = set(FLAG_LABELS) | set(CPU_EMULATION_LABELS) | {"cpu compatible mode"}
     for heading in ("turn on", "additional settings"):
         for line in form.get(heading, "").splitlines():
             line = line.strip()
@@ -416,11 +437,24 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
             if not row or row.group(1).strip().lower() not in known_options:
                 problems.append(f"Unrecognised line `{line}` under {heading.title()}.")
 
-    for label in checked(form, "turn on", "additional settings"):
+    ticked = checked(form, "turn on", "additional settings")
+    for label in ticked:
         if label in FLAG_LABELS:
             settings.add(FLAG_LABELS[label], subpath)
         elif label == "cpu compatible mode":
             problems.append("\"CPU compatible mode\" is ambiguous (it is on by default); say whether it should be turned off.")
+
+    # The dropdown, or the checkboxes of earlier forms.
+    cpu_modes = [CPU_EMULATION_LABELS[label] for label in ticked if label in CPU_EMULATION_LABELS]
+    cpu_emulation = field(form, "cpu emulation").lower()
+    if cpu_emulation in CPU_EMULATION_OPTIONS:
+        cpu_modes.append(CPU_EMULATION_OPTIONS[cpu_emulation])
+    elif cpu_emulation:
+        problems.append(f"Unsupported CPU emulation `{cpu_emulation}`.")
+    if len(set(cpu_modes)) > 1:
+        problems.append("Cycle-exact, not cycle-exact, CPU compatible off and JIT exclude each other; pick one.")
+    elif cpu_modes:
+        settings.exclusive("CPU emulation", cpu_modes[0], subpath)
 
     slave = field(form, "default slave")
     if slave:
@@ -446,6 +480,28 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
             problems.append("Not valid mapping lines: " + ", ".join(f"`{b}`" for b in bad))
         else:
             settings.set_controls(subpath, lines)
+
+    # Combinations Amiberry would silently ignore. CPU settings are keyed by
+    # subpath, so JIT must suit every archive of the game, not only this one.
+    after = merge_hardware(entry.get("hardware", {}), settings_hardware(filename, subpath, settings))
+    no_jit = []
+    for game in games:
+        if game["subpath"] != subpath:
+            continue
+        hw = merge_hardware(game.get("hardware", {}), settings_hardware(game["filename"], subpath, settings))
+        if hw.get("jit") and hw.get("chipset") != "aga" and hw.get("cpu") not in JIT_CPUS:
+            no_jit.append(game["filename"])
+    if no_jit:
+        problems.append("JIT needs a 68020 or higher, and these archives of the game run on a 68000/68010: "
+                        + ", ".join(f"`{name}`" for name in no_jit)
+                        + ". Set CPU 68020 too, or pick another CPU emulation.")
+    if after.get("chipset") == "aga" and after.get("cpu") in ("68000", "68010"):
+        problems.append(f"AGA games run on a 68020 or higher in Amiberry, so CPU {after['cpu']} has no effect.")
+    width = field(form, "screen width")
+    if after["screen_autoheight"] and (width not in ("", str(DEFAULT_SCREEN_WIDTH))
+                                       or any(field(form, heading) for heading, _ in offset_headings)):
+        problems.append("Amiberry ignores the screen width and offsets while the screen height is Automatic, "
+                        "because it crops automatically; set a screen height as well.")
 
     return problems
 
