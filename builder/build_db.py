@@ -156,7 +156,8 @@ def scan_archive(archive_path: str) -> dict | None:
         except Exception:
             continue
 
-    variant_uuid = generate_variant_uuid(file_sha1s) if file_sha1s else ""
+    # Upstream hashes an empty list too (root-level archives share one UUID).
+    variant_uuid = generate_variant_uuid(file_sha1s)
 
     # Find and parse slave files
     slaves = []
