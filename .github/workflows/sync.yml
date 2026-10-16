@@ -29,11 +29,11 @@ jobs:
     outputs:
       has_db: ${{ steps.check.outputs.has_db }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -105,7 +105,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
 
@@ -116,7 +116,7 @@ jobs:
           cp schema/whdload_db.schema.json _site/
           echo '{"status":"ok","file":"whdload_db.json"}' > _site/index.json
 
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 

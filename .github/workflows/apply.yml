@@ -37,13 +37,13 @@ jobs:
       ISSUE: ${{ github.event.issue.number || inputs.issue }}
       UPSTREAM_XML: /tmp/whdload_db.xml
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
           # Full history: a re-run looks for this request's earlier apply commit.
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
