@@ -167,13 +167,13 @@ body:
   - type: checkboxes
     id: flags
     attributes:
-      label: Turn On (all versions)
-      description: Tick only what the game needs. To turn something off, say so in Additional Notes.
+      label: Settings to Add (all versions)
+      description: A ticked box adds that setting to the game. An unticked box changes nothing; it does not remove a setting the game already has. To remove one, say which in Additional Notes.
       options:
         - label: NTSC
         - label: Immediate blitter
-        - label: Turn off horizontal centering
-        - label: Turn off vertical centering
+        - label: No horizontal centering
+        - label: No vertical centering
         - label: Needs extra libraries (e.g. xpk)
 
   - type: input
@@ -204,4 +204,4 @@ body:
     id: notes
     attributes:
       label: Additional Notes
-      description: What goes wrong without these settings, what you tested, anything to turn off.
+      description: What goes wrong without these settings, what you tested, and any setting the game has now that should be removed.
