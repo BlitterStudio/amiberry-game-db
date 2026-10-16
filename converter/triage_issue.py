@@ -36,14 +36,16 @@ DATA_PATH = re.compile(r"[A-Za-z0-9_./:-]+")
 # Game folders as used in settings files and builder/customcontrols paths.
 SUBPATH_PART = re.compile(r"[A-Za-z0-9_!&+.-]+")
 
-# Checkbox labels (current form and the first version of the form) -> settings file.
+# Checkbox labels (current form, then earlier versions of the form) -> settings file.
 FLAG_LABELS = {
     "ntsc": "Chipset_ForceNTSC.txt",
-    "ntsc mode required": "Chipset_ForceNTSC.txt",
     "immediate blitter": "Chipset_ImmediateBlitter.txt",
+    "no horizontal centering": "Screen_NoCenter_H.txt",
+    "no vertical centering": "Screen_NoCenter_V.txt",
+    "needs extra libraries (e.g. xpk)": "WHD_Libraries.txt",
+    "ntsc mode required": "Chipset_ForceNTSC.txt",
     "turn off horizontal centering": "Screen_NoCenter_H.txt",
     "turn off vertical centering": "Screen_NoCenter_V.txt",
-    "needs extra libraries (e.g. xpk)": "WHD_Libraries.txt",
     "slave needs libraries": "WHD_Libraries.txt",
 }
 # CPU emulation dropdown options -> settings file. The modes exclude each other.
@@ -68,8 +70,8 @@ PORT_FILES = ["Control_CD32.txt", "Control_Port0_Mouse.txt", "Control_Port0_CD32
 # Issue parsing
 # ---------------------------------------------------------------------------
 
-# Exact form headings (lower-cased) -> section key. Current form, then the
-# first version of the form. Anything else is an unknown section.
+# Exact form headings (lower-cased) -> section key. Current form, then earlier
+# versions of the form. Anything else is an unknown section.
 HEADING_KEYS = {
     "game name": "game name",
     "whdload archive filename": "whdload archive filename",
@@ -86,7 +88,7 @@ HEADING_KEYS = {
     "horizontal screen offset (all versions)": "horizontal screen offset",
     "vertical screen offset (all versions)": "vertical screen offset",
     "cpu emulation (all versions)": "cpu emulation",
-    "turn on (all versions)": "turn on",
+    "settings to add (all versions)": "settings to add",
     "default slave (this archive)": "default slave",
     "data path (this archive)": "data path",
     "custom controller mappings (all versions)": "custom controller mappings",
@@ -95,6 +97,7 @@ HEADING_KEYS = {
     "cpu": "cpu",
     "primary control": "primary control",
     "cpu clock speed": "cpu clock speed",
+    "turn on (all versions)": "settings to add",
     "additional settings": "additional settings",
     "screen height (if non-default)": "screen height",
     "screen width (if non-default)": "screen width",
@@ -428,7 +431,7 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
     # Every line of a checkbox section must be a known option, ticked or not;
     # anything else (an added instruction) needs a person.
     known_options = set(FLAG_LABELS) | set(CPU_EMULATION_LABELS) | {"cpu compatible mode"}
-    for heading in ("turn on", "additional settings"):
+    for heading in ("settings to add", "additional settings"):
         for line in form.get(heading, "").splitlines():
             line = line.strip()
             if not line or line.lower() in EMPTY:
@@ -437,7 +440,7 @@ def plan(form: dict[str, str], entry: dict, settings: EditableSettings, games: l
             if not row or row.group(1).strip().lower() not in known_options:
                 problems.append(f"Unrecognised line `{line}` under {heading.title()}.")
 
-    ticked = checked(form, "turn on", "additional settings")
+    ticked = checked(form, "settings to add", "additional settings")
     for label in ticked:
         if label in FLAG_LABELS:
             settings.add(FLAG_LABELS[label], subpath)
