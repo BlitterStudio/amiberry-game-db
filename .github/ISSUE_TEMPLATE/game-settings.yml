@@ -175,6 +175,7 @@ body:
         - label: No horizontal centering
         - label: No vertical centering
         - label: Needs extra libraries (e.g. xpk)
+        - label: Needs ExpChip (expansion memory in Chip RAM)
 
   - type: input
     id: default_slave

@@ -43,6 +43,7 @@ FLAG_LABELS = {
     "no horizontal centering": "Screen_NoCenter_H.txt",
     "no vertical centering": "Screen_NoCenter_V.txt",
     "needs extra libraries (e.g. xpk)": "WHD_Libraries.txt",
+    "needs expchip (expansion memory in chip ram)": "WHD_ExpChip.txt",
     "ntsc mode required": "Chipset_ForceNTSC.txt",
     "turn off horizontal centering": "Screen_NoCenter_H.txt",
     "turn off vertical centering": "Screen_NoCenter_V.txt",

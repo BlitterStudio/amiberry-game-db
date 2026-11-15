@@ -54,6 +54,7 @@ FLAG_FILES = (
     *CPU_EMULATION_FILES,
     "Screen_NoCenter_H.txt",
     "Screen_NoCenter_V.txt",
+    "WHD_ExpChip.txt",
     "WHD_Libraries.txt",
     *(f"CPU_ClockSpeed_{name}.txt" for name, _ in CLOCK_SPEEDS),
     *(f"CPU_Model_{model}.txt" for model in CPU_MODELS),
@@ -289,6 +290,10 @@ def apply_overrides(entry: dict, settings: Settings) -> None:
 
     entry["hardware"] = merge_hardware(entry.get("hardware", {}), settings_hardware(filename, subpath, settings))
     entry["slave_libraries"] = settings.listed("WHD_Libraries.txt", subpath)
+    if settings.listed("WHD_ExpChip.txt", subpath):
+        entry["exp_chip"] = True
+    else:
+        entry.pop("exp_chip", None)
 
     controls = settings.custom_controls(subpath)
     if controls is not None:

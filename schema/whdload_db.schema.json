@@ -40,6 +40,7 @@
         "slave_count": { "type": "integer", "minimum": 0 },
         "slave_default": { "type": "string" },
         "slave_libraries": { "type": "boolean" },
+        "exp_chip": { "type": "boolean" },
         "slaves": {
           "type": "array",
           "items": { "$ref": "#/$defs/slave" }
