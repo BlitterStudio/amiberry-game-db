@@ -87,6 +87,7 @@ To find a game's subpath, look at the "Game folder" line in the triage bot's com
 | `Screen_NoCenter_V.txt` | Disable vertical screen centering. |
 | `Screen_Width_640.txt` | Force screen width to 640 (default is 720). |
 | `Screen_Width_704.txt` | Force screen width to 704 (default is 720). |
+| `WHD_ExpChip.txt` | Pass `EXPCHIP` to WHDLoad, so the slave's expansion memory (ExpMem) is allocated in Chip RAM. Needs an Amiberry version after 8.5.0. |
 | `WHD_Libraries.txt` | Indicate the game requires external WHDLoad libraries. |
 
 Horace's XML also has `Chipset_FastCopper.txt` (`FAST_COPPER`). Only Amiberry-Lite uses it, and Lite reads Horace's XML directly, so `whdload_db.json` never carries `fast_copper`: the converter drops it and the schema rejects it.

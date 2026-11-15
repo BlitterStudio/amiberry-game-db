@@ -47,6 +47,8 @@ The database uses JSON with structured, typed fields:
 }
 ```
 
+The optional `exp_chip` boolean is present and `true` only when WHDLoad needs expansion memory allocated in Chip RAM. It requires an Amiberry version after 8.5.0; older versions ignore it.
+
 See [`schema/whdload_db.schema.json`](schema/whdload_db.schema.json) for the full JSON Schema.
 
 ## Contributing
