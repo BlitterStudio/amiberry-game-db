@@ -5,7 +5,6 @@ ArkanoidNTSC
 BeyondTheIcePalace
 BloodMoney
 BrianTheLion
-BrianTheLionAGA
 BridesOfDracula
 BrutalPawsOfFury
 Burntime
