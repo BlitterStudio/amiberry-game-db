@@ -1,4 +1,5 @@
 BattleIsle
 BattleIsle&DataDisks
+Historyline
 SpaceQuestEnhancedMT32
 SuperOffRoadNTSC
