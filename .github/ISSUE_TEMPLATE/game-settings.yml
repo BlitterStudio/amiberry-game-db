@@ -137,18 +137,18 @@ body:
       default: 0
 
   - type: input
-    id: screen_height
-    attributes:
-      label: Screen Height (all versions)
-      description: The Height value from Amiberry's Crop and Offset settings, 1 to 576, or Automatic. Common values are 400, 432, 480, 512, 524, 540 and 568.
-      placeholder: "e.g., 512"
-
-  - type: input
     id: screen_width
     attributes:
       label: Screen Width (all versions)
       description: The Width value from Amiberry's Crop and Offset settings, 1 to 754. The default is 720. Width and offsets only take effect when the screen height is not Automatic.
       placeholder: "e.g., 660"
+
+  - type: input
+    id: screen_height
+    attributes:
+      label: Screen Height (all versions)
+      description: The Height value from Amiberry's Crop and Offset settings, 1 to 576, or Automatic. Common values are 400, 432, 480, 512, 524, 540 and 568.
+      placeholder: "e.g., 512"
 
   - type: input
     id: offset_h
