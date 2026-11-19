@@ -1,2 +1,4 @@
+BattleIsle
+BattleIsle&DataDisks
 SpaceQuestEnhancedMT32
 SuperOffRoadNTSC
