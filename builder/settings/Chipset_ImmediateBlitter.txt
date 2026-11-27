@@ -4,6 +4,7 @@ CrazyCars2
 DeconstructionAGA
 Flood
 MasterAxe
+Megademo2Disorder
 Outzone
 PanzaKickBoxing
 PanzaKickBoxingFr
